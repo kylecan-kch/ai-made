@@ -1,5 +1,5 @@
 import React from 'react';
-import { Contact2, Download, Trash2, FileSpreadsheet, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Contact2, Download, Trash2, FileSpreadsheet, RefreshCw, Sparkles, CheckCircle2, Package } from 'lucide-react';
 import { Contact } from '../types/contact';
 
 interface NavbarProps {
@@ -7,6 +7,7 @@ interface NavbarProps {
   onLoadDemo: () => void;
   onClearAll: () => void;
   onDownloadTemplate: () => void;
+  onOpenOfflineModal: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -14,6 +15,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLoadDemo,
   onClearAll,
   onDownloadTemplate,
+  onOpenOfflineModal,
 }) => {
   const withPhones = contacts.filter(c => c.phones.length > 0).length;
   const withEmails = contacts.filter(c => c.emails.length > 0).length;
@@ -70,6 +72,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={onOpenOfflineModal}
+              title="打包生成离线单文件网页或 Windows 套壳 EXE"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
+            >
+              <Package className="w-3.5 h-3.5 text-purple-600" />
+              打包离线网页 / EXE
+            </button>
+
             <button
               onClick={onDownloadTemplate}
               title="下载包含标准列头的 Excel 导入模板"

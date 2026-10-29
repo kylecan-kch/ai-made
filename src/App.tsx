@@ -17,6 +17,7 @@ import { ContactsTable } from './components/ContactsTable';
 import { ContactDrawer } from './components/ContactDrawer';
 import { ExportPanel } from './components/ExportPanel';
 import { DeduplicateModal } from './components/DeduplicateModal';
+import { OfflineDownloadModal } from './components/OfflineDownloadModal';
 import {
   getDemoContacts,
   downloadStandardTemplate,
@@ -57,6 +58,9 @@ export default function App() {
 
   // Deduplicate Modal
   const [isDeduplicateOpen, setIsDeduplicateOpen] = useState(false);
+
+  // Offline Download / EXE Modal
+  const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false);
 
   // Global notification banner
   const [notification, setNotification] = useState<{
@@ -213,6 +217,7 @@ export default function App() {
         onLoadDemo={handleLoadDemo}
         onClearAll={handleClearAll}
         onDownloadTemplate={downloadStandardTemplate}
+        onOpenOfflineModal={() => setIsOfflineModalOpen(true)}
       />
 
       {/* Global Notification Toast */}
@@ -350,6 +355,12 @@ export default function App() {
           setSelectedIds(new Set());
           showNotification(`查重合并完成，当前有效联系人共 ${merged.length} 位`);
         }}
+      />
+
+      {/* Offline Standalone & EXE Packaging Modal */}
+      <OfflineDownloadModal
+        isOpen={isOfflineModalOpen}
+        onClose={() => setIsOfflineModalOpen(false)}
       />
 
       {/* Subtle Footer */}
