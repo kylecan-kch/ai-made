@@ -304,14 +304,14 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
             <div className="pt-3 border-t border-slate-100 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-semibold text-slate-700 block">
-                  打包离线应用 / 套壳 EXE
+                  打包单文件离线网页
                 </span>
                 <span className="text-[10px] text-purple-700 bg-purple-50 px-1.5 py-0.2 rounded font-medium">
                   双击即用
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                可脱离当前网页环境，下载独立单网页或 Windows 桌面免安装套件在本地直接双击打开运行。
+                支持下载独立单网页文件，在任何电脑直接双击打开运行，完全脱离网络和服务器。
               </p>
             </div>
           </div>

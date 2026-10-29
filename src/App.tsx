@@ -62,6 +62,9 @@ export default function App() {
   // Offline Download / EXE Modal
   const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false);
 
+  // Clear all confirmation dialog
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
+
   // Global notification banner
   const [notification, setNotification] = useState<{
     type: 'success' | 'info' | 'error';
@@ -86,21 +89,29 @@ export default function App() {
 
   // Selection handlers
   const handleToggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setSelectedIds(next);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
-  const handleToggleSelectAll = () => {
-    if (selectedIds.size === contacts.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(contacts.map(c => c.id)));
-    }
+  const handleToggleSelectAll = (visibleIds?: string[]) => {
+    const targetIds = visibleIds && visibleIds.length > 0 ? visibleIds : contacts.map(c => c.id);
+    setSelectedIds(prev => {
+      const allSelected = targetIds.length > 0 && targetIds.every(id => prev.has(id));
+      const next = new Set(prev);
+      if (allSelected) {
+        targetIds.forEach(id => next.delete(id));
+      } else {
+        targetIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
   };
 
   // Contacts mutations
@@ -129,13 +140,18 @@ export default function App() {
     showNotification('联系人已删除', 'info');
   };
 
-  const handleBatchDelete = () => {
-    if (!confirm(`确定要删除选中的 ${selectedIds.size} 位联系人吗？此操作无法撤销。`)) {
-      return;
-    }
-    setContacts(prev => prev.filter(c => !selectedIds.has(c.id)));
-    showNotification(`已批量删除 ${selectedIds.size} 位联系人`);
+  const handleClearSelection = () => {
     setSelectedIds(new Set());
+  };
+
+  const handleBatchDelete = () => {
+    setSelectedIds(currentSelected => {
+      if (currentSelected.size === 0) return currentSelected;
+      const count = currentSelected.size;
+      setContacts(prev => prev.filter(c => !currentSelected.has(c.id)));
+      showNotification(`已批量删除 ${count} 位联系人`);
+      return new Set();
+    });
   };
 
   const handleAddNewContact = () => {
@@ -202,11 +218,7 @@ export default function App() {
   };
 
   const handleClearAll = () => {
-    if (confirm('确定要清空当前的全部联系人列表吗？')) {
-      setContacts([]);
-      setSelectedIds(new Set());
-      showNotification('通讯录数据已全部清空', 'info');
-    }
+    setIsClearConfirmOpen(true);
   };
 
   return (
@@ -303,6 +315,7 @@ export default function App() {
             selectedIds={selectedIds}
             onToggleSelect={handleToggleSelect}
             onToggleSelectAll={handleToggleSelectAll}
+            onClearSelection={handleClearSelection}
             onViewContact={handleViewContact}
             onEditContact={handleEditContact}
             onDeleteContact={handleDeleteContact}
@@ -357,16 +370,52 @@ export default function App() {
         }}
       />
 
-      {/* Offline Standalone & EXE Packaging Modal */}
+      {/* Offline Standalone Packaging Modal */}
       <OfflineDownloadModal
         isOpen={isOfflineModalOpen}
         onClose={() => setIsOfflineModalOpen(false)}
       />
 
+      {/* Clear All Confirmation Dialog */}
+      {isClearConfirmOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-3.5">
+            <div className="w-10 h-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">确认清空全部通讯录？</h3>
+              <p className="text-xs text-slate-500 mt-1">此操作将移除当前表格中全部 {contacts.length} 位联系人，无法撤销。</p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsClearConfirmOpen(false)}
+                className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setContacts([]);
+                  setSelectedIds(new Set());
+                  setIsClearConfirmOpen(false);
+                  showNotification('通讯录数据已全部清空', 'info');
+                }}
+                className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs cursor-pointer"
+              >
+                确认清空
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Subtle Footer */}
       <footer className="border-t border-slate-200 bg-white py-3.5 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-400">
-          VCF Contacts Hub · 自动解析 .vcf 与 格式1 表格互转工具 · 符合 RFC 2426 / 6350 规范
+          阚哥不求人转换器 · 通讯录提取转换 · 再也不用在傻逼咸鱼上花钱买了
         </div>
       </footer>
     </div>

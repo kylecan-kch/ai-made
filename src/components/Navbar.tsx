@@ -33,14 +33,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-bold text-slate-900 tracking-tight">
-                  VCF Contacts Hub
+                  阚哥不求人转换器
                 </h1>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                  格式1 互转
+                  通讯录提取转换
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                .vcf 联系人解析与 Excel/CSV 表格双向转换器
+                再也不用在傻逼咸鱼上花钱买了
               </p>
             </div>
           </div>
@@ -74,11 +74,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={onOpenOfflineModal}
-              title="打包生成离线单文件网页或 Windows 套壳 EXE"
+              title="打包下载单文件离线网页，打开即用"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
             >
               <Package className="w-3.5 h-3.5 text-purple-600" />
-              打包离线网页 / EXE
+              打包离线网页
             </button>
 
             <button

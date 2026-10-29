@@ -42,6 +42,7 @@ export const ContactDrawer: React.FC<ContactDrawerProps> = ({
   const [isEditing, setIsEditing] = useState(initialEditing);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showVcardRaw, setShowVcardRaw] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Contact | null>(null);
@@ -52,6 +53,7 @@ export const ContactDrawer: React.FC<ContactDrawerProps> = ({
       setFormData(JSON.parse(JSON.stringify(contact)));
       setIsEditing(initialEditing);
       setShowVcardRaw(false);
+      setConfirmDelete(false);
     } else {
       setFormData(null);
     }
@@ -202,19 +204,37 @@ export const ContactDrawer: React.FC<ContactDrawerProps> = ({
                   <Edit2 className="w-3.5 h-3.5 text-blue-600" />
                   编辑
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm('确定要删除此联系人吗？')) {
-                      onDelete(formData.id);
-                      onClose();
-                    }
-                  }}
-                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-rose-50 text-rose-600 cursor-pointer"
-                  title="删除联系人"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {confirmDelete ? (
+                  <div className="flex items-center gap-1 bg-rose-50 border border-rose-300 p-1 rounded-md text-[11px]">
+                    <span className="text-rose-800 font-semibold px-1">确认删除？</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDelete(formData.id);
+                        onClose();
+                      }}
+                      className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded cursor-pointer"
+                    >
+                      删除
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="px-1.5 py-0.5 bg-white border border-slate-300 text-slate-700 rounded cursor-pointer"
+                    >
+                      取消
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="p-1.5 rounded-lg border border-slate-200 hover:bg-rose-50 text-rose-600 cursor-pointer"
+                    title="删除联系人"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </>
             )}
             <button
