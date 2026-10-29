@@ -1,0 +1,6 @@
+{
+  "name": "VCF Contacts Hub - VCF 联系人解析与表格互转工具",
+  "description": "专业的 .vcf 联系人文件解析器与表格转换工具，支持 VCF 与 Excel/CSV（格式1）双向解析、批量编辑、详情查阅与高兼容性导出。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
