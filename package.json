@@ -9,7 +9,9 @@
     "build:standalone": "node scripts/build-offline-html.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test src/utils/*.test.ts",
+    "bench": "tsx scripts/bench-contacts.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
