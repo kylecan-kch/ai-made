@@ -54,7 +54,7 @@ miniprogram-vcf/
 │   ├── storage.js           # 本地缓存：精简格式 + 按 ~700KB 分片存储（突破单 key 1MB 限制）、旧缓存迁移、损坏回退
 │   ├── encoding.js          # 纯 JS 的 UTF-8 编解码、GBK 解码、编码自动识别（替代 TextDecoder）
 │   ├── cp936.js             # GBK 码表（codepage，Apache-2.0）
-│   ├── xlsx.mini.min.js     # SheetJS 0.18.5 精简版（Apache-2.0）
+│   ├── xlsx.mini.min.js     # SheetJS 0.20.3 精简版（Apache-2.0，官方 cdn.sheetjs.com 发布；已修复 CVE-2023-30533 / CVE-2024-22363）
 │   └── xlsx.LICENSE.txt
 └── tests/                   # Node 测试（不会被打包进小程序）
     ├── utils.test.js        # 工具函数测试（在“无 Buffer/TextDecoder/DOM”的沙箱中运行）
@@ -62,6 +62,7 @@ miniprogram-vcf/
     ├── storage.test.js      # 分片缓存（模拟 1MB/key、10MB 总量限制）：3k/2万/5万往返、照片、迁移、损坏、缩减
     ├── csv.excel.test.js    # CSV 的 Excel 兼容（="..." 号码、公式注入转义、RFC 4180）与导入往返
     ├── table.encoding.edge.test.js # CSV/xlsx/编码边界
+    ├── xlsx.vendor.test.js  # 内置 SheetJS 版本、沙箱加载、xlsx 往返、CVE-2023-30533 回归（fixtures/ 下为恶意样本）
     ├── page.smoke.test.js   # 用模拟 wx 跑通页面完整流程
     ├── validate.test.js     # JSON、页面文件、WXML 闭合、事件函数、禁用 API、包体积校验
     └── sandbox.js
