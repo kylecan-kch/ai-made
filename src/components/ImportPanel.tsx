@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Contact } from '../types/contact';
 import { parseVCard } from '../utils/vcard';
+import { decodeTextBuffer } from '../utils/encoding';
 import { parseSpreadsheetBuffer, FORMAT1_COLUMNS } from '../utils/tableFormat';
 
 interface ImportPanelProps {
@@ -41,7 +42,8 @@ export const ImportPanel: React.FC<ImportPanelProps> = ({
     const reader = new FileReader();
     reader.onload = e => {
       try {
-        const text = e.target?.result as string;
+        // Read raw bytes so GBK / GB18030 / UTF-16 files are detected instead of decoded as UTF-8 mojibake
+        const text = decodeTextBuffer(e.target?.result as ArrayBuffer);
         const parsed = parseVCard(text);
         if (parsed.length === 0) {
           setStatusMessage({
@@ -62,7 +64,7 @@ export const ImportPanel: React.FC<ImportPanelProps> = ({
         });
       }
     };
-    reader.readAsText(file, 'utf-8');
+    reader.readAsArrayBuffer(file);
   };
 
   const handleExcelFile = (file: File) => {

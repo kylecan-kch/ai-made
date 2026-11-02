@@ -1,39 +1,44 @@
 import { Contact, PhoneEntry, EmailEntry, AddressEntry, VCardExportOptions } from '../types/contact';
+import { normalizeCharsetLabel } from './encoding';
 
 /**
  * Decode Quoted-Printable string into UTF-8 or specified charset
  */
 export function decodeQuotedPrintable(input: string, charset = 'utf-8'): string {
-  try {
-    // Strip soft line breaks (=\r\n or =\n)
-    const normalized = input.replace(/=\r?\n/g, '');
-    const bytes: number[] = [];
-    
-    for (let i = 0; i < normalized.length; i++) {
-      const char = normalized[i];
-      if (char === '=' && i + 2 < normalized.length) {
-        const hex = normalized.substring(i + 1, i + 3);
-        if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
-          bytes.push(parseInt(hex, 16));
-          i += 2;
-          continue;
-        }
+  // Strip soft line breaks (=\r\n or =\n)
+  const normalized = input.replace(/=\r?\n/g, '');
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+    if (char === '=' && i + 2 < normalized.length) {
+      const hex = normalized.substring(i + 1, i + 3);
+      if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+        bytes.push(parseInt(hex, 16));
+        i += 2;
+        continue;
       }
-      bytes.push(char.charCodeAt(0));
     }
-    
-    const uint8 = new Uint8Array(bytes);
-    const decoder = new TextDecoder(charset.toLowerCase().includes('gb') ? 'gbk' : 'utf-8');
-    return decoder.decode(uint8);
-  } catch (err) {
-    // Fallback if decoder fails
-    return input.replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => {
-      try {
-        return String.fromCharCode(parseInt(hex, 16));
-      } catch {
-        return '';
-      }
-    });
+    const code = char.charCodeAt(0);
+    if (code < 0x80) {
+      bytes.push(code);
+    } else {
+      // Non-ASCII text that was not QP-encoded: keep it intact instead of truncating to one byte
+      const cp = normalized.codePointAt(i)!;
+      const encoded = encoder.encode(String.fromCodePoint(cp));
+      for (let b = 0; b < encoded.length; b++) bytes.push(encoded[b]);
+      if (cp > 0xffff) i++;
+    }
+  }
+
+  const uint8 = new Uint8Array(bytes);
+  const label = normalizeCharsetLabel(charset);
+  try {
+    return new TextDecoder(label).decode(uint8);
+  } catch {
+    // Unknown charset label: fall back to UTF-8 rather than returning raw =XX sequences
+    return new TextDecoder('utf-8').decode(uint8);
   }
 }
 
@@ -60,14 +65,38 @@ export function encodeQuotedPrintable(str: string): string {
 
 /**
  * Unescape vCard special characters like \, \; \n \\
+ * Single pass so that an escaped backslash followed by "n" ("\\n") stays a literal "\n".
  */
 export function unescapeVCard(val: string): string {
   if (!val) return '';
-  return val
-    .replace(/\\n/gi, '\n')
-    .replace(/\\,/g, ',')
-    .replace(/\\;/g, ';')
-    .replace(/\\\\/g, '\\');
+  if (val.indexOf('\\') === -1) return val;
+  return val.replace(/\\([\\;,nN])/g, (_, ch: string) => (ch === 'n' || ch === 'N' ? '\n' : ch));
+}
+
+/**
+ * Split a raw (still escaped) vCard value on an unescaped separator.
+ * "A\;B;C" split on ';' -> ["A\;B", "C"]
+ */
+export function splitEscaped(val: string, sep: string): string[] {
+  if (val.indexOf('\\') === -1) return val.split(sep);
+  const out: string[] = [];
+  let cur = '';
+  for (let i = 0; i < val.length; i++) {
+    const ch = val[i];
+    if (ch === '\\' && i + 1 < val.length) {
+      cur += ch + val[i + 1];
+      i++;
+      continue;
+    }
+    if (ch === sep) {
+      out.push(cur);
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
 }
 
 /**
@@ -79,7 +108,15 @@ export function escapeVCard(val: string): string {
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n');
+    .replace(/\r?\n|\r/g, '\\n');
+}
+
+/**
+ * Remove CR/LF from values that are written without escaping (EMAIL, URL, BDAY),
+ * so that a field value can never inject extra vCard properties / cards.
+ */
+function stripLineBreaks(val: string): string {
+  return val.replace(/[\r\n]+/g, ' ').trim();
 }
 
 /**
@@ -149,25 +186,151 @@ export function normalizePhone(raw: string): string {
 }
 
 /**
+ * Split raw file content into logical vCard property lines.
+ * - Handles CRLF / LF / CR
+ * - RFC 2425/6350 line folding (continuation line starts with space or tab)
+ * - vCard 2.1 Quoted-Printable soft line breaks (line ends with "=" and continues on the next line)
+ */
+function toLogicalLines(rawContent: string): string[] {
+  const physical = rawContent.split(/\r\n|\r|\n/);
+  const logical: string[] = [];
+  let qpOpen = false;
+  for (const line of physical) {
+    if (logical.length > 0 && qpOpen && line.trim().toUpperCase() !== 'END:VCARD') {
+      // Previous QP line ended with a soft break "=": drop the "=" and join
+      const prev = logical[logical.length - 1];
+      logical[logical.length - 1] = prev.slice(0, -1) + line;
+    } else if (logical.length > 0 && (line.startsWith(' ') || line.startsWith('\t'))) {
+      logical[logical.length - 1] += line.substring(1);
+    } else {
+      logical.push(line);
+    }
+    const cur = logical[logical.length - 1];
+    qpOpen = cur.charCodeAt(cur.length - 1) === 61 /* '=' */ && /^[^:]*QUOTED-PRINTABLE/i.test(cur);
+  }
+  return logical;
+}
+
+/** Index of the first ':' that is not inside a double-quoted parameter value */
+function findValueColon(line: string): number {
+  const simple = line.indexOf(':');
+  const quote = line.indexOf('"');
+  if (quote === -1 || (simple !== -1 && simple < quote)) return simple;
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (ch === ':' && !inQuotes) return i;
+  }
+  return -1;
+}
+
+/** Split on a separator that is not inside double quotes */
+function splitOutsideQuotes(str: string, sep: string): string[] {
+  if (str.indexOf('"') === -1) return str.split(sep);
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (const ch of str) {
+    if (ch === '"') inQuotes = !inQuotes;
+    if (ch === sep && !inQuotes) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+interface ParsedProperty {
+  name: string;
+  params: Record<string, string>;
+  rawValue: string;
+}
+
+function parsePropertyLine(line: string): ParsedProperty | null {
+  const colonIdx = findValueColon(line);
+  if (colonIdx === -1) return null;
+  const propAndParams = line.substring(0, colonIdx).trim();
+  const rawValue = line.substring(colonIdx + 1).trim();
+  const paramParts = splitOutsideQuotes(propAndParams, ';');
+  // Strip group prefix, e.g. iOS / Google "item1.TEL" -> "TEL"
+  let name = paramParts[0].trim().toUpperCase();
+  const dot = name.lastIndexOf('.');
+  if (dot !== -1) name = name.substring(dot + 1);
+
+  const params: Record<string, string> = {};
+  const types: string[] = [];
+  for (let p = 1; p < paramParts.length; p++) {
+    const paramStr = paramParts[p].trim();
+    if (!paramStr) continue;
+    const eq = paramStr.indexOf('=');
+    if (eq !== -1) {
+      const key = paramStr.substring(0, eq).trim().toUpperCase();
+      const val = paramStr.substring(eq + 1).trim().replace(/"/g, '').toUpperCase();
+      if (key === 'TYPE') {
+        types.push(val);
+      } else {
+        params[key] = val;
+      }
+    } else {
+      // vCard 2.1 bare parameters, e.g. TEL;CELL or TEL;WORK;VOICE
+      const bare = paramStr.toUpperCase();
+      params[bare] = 'TRUE';
+      if (bare !== 'QUOTED-PRINTABLE' && bare !== 'BASE64' && bare !== '8BIT') types.push(bare);
+    }
+  }
+  // Repeated TYPE params (iOS: TEL;type=WORK;type=VOICE;type=pref) are accumulated instead of overwritten
+  if (types.length > 0) params['TYPE'] = types.join(',');
+  return { name, params, rawValue };
+}
+
+/**
  * Parse raw .vcf string into an array of Contact objects
  */
 export function parseVCard(rawContent: string): Contact[] {
   if (!rawContent || !rawContent.trim()) {
     return [];
   }
+  const content = rawContent.charCodeAt(0) === 0xfeff ? rawContent.slice(1) : rawContent;
 
-  // 1. Unfold lines: RFC vCard allows long lines wrapped with newline followed by space or tab
-  const unfolded = rawContent.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '').replace(/\r[ \t]/g, '');
+  // Line-based state machine (linear time; tolerant of a missing END:VCARD)
+  const cards: string[][] = [];
+  let current: string[] | null = null;
+  for (const rawLine of toLogicalLines(content)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const upper = line.length === 11 || line.length === 9 ? line.toUpperCase() : '';
+    if (upper === 'BEGIN:VCARD') {
+      if (current) cards.push(current);
+      current = [];
+    } else if (upper === 'END:VCARD') {
+      if (current) cards.push(current);
+      current = null;
+    } else if (current) {
+      current.push(line);
+    }
+  }
+  if (current && current.length > 0) cards.push(current);
 
-  // 2. Split cards by BEGIN:VCARD and END:VCARD
-  const cardRegex = /BEGIN:VCARD([\s\S]*?)END:VCARD/gi;
   const contacts: Contact[] = [];
-  let match: RegExpExecArray | null;
+  for (const lines of cards) {
+    const contact = parseCardLines(lines);
+    if (contact) contacts.push(contact);
+  }
+  return contacts;
+}
 
-  while ((match = cardRegex.exec(unfolded)) !== null) {
-    const cardContent = match[1];
-    const lines = cardContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+/** Split a structured value (N / ORG / ADR) on unescaped ';' and unescape each component */
+function splitComponents(escaped: string, sep: string): string[] {
+  const parts = splitEscaped(escaped, sep);
+  for (let i = 0; i < parts.length; i++) parts[i] = unescapeVCard(parts[i]).trim();
+  return parts;
+}
 
+function parseCardLines(lines: string[]): Contact | null {
     let fullName = '';
     let familyName = '';
     let givenName = '';
@@ -191,38 +354,16 @@ export function parseVCard(rawContent: string): Contact[] {
     let photo: string | undefined = undefined;
 
     for (const line of lines) {
-      // Find colon separating prop+params from value
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) continue;
-
-      const propAndParams = line.substring(0, colonIdx).trim();
-      let value = line.substring(colonIdx + 1).trim();
-
-      // Parse parameters (e.g., TEL;TYPE=CELL,VOICE or N;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE)
-      const paramParts = propAndParams.split(';');
-      const propName = paramParts[0].toUpperCase();
-      const params: Record<string, string> = {};
-
-      for (let p = 1; p < paramParts.length; p++) {
-        const paramStr = paramParts[p];
-        if (paramStr.includes('=')) {
-          const [key, val] = paramStr.split('=');
-          params[key.toUpperCase()] = (val || '').toUpperCase();
-        } else {
-          // Sometimes TYPE is implicit e.g. TEL;CELL or TEL;WORK
-          params[paramStr.toUpperCase()] = 'TRUE';
-        }
-      }
+      const prop = parsePropertyLine(line);
+      if (!prop) continue;
+      const { name: propName, params, rawValue } = prop;
 
       // Check for Quoted-Printable encoding
-      const isQP = params['ENCODING'] === 'QUOTED-PRINTABLE' || Object.keys(params).some(k => k === 'QUOTED-PRINTABLE');
+      const isQP = params['ENCODING'] === 'QUOTED-PRINTABLE' || params['QUOTED-PRINTABLE'] === 'TRUE';
       const charset = params['CHARSET'] || 'UTF-8';
-
-      if (isQP) {
-        value = decodeQuotedPrintable(value, charset);
-      } else {
-        value = unescapeVCard(value);
-      }
+      // Raw (still escaped) value: QP is decoded first, vCard escapes are resolved per component
+      const escaped = isQP ? decodeQuotedPrintable(rawValue, charset) : rawValue;
+      const value = unescapeVCard(escaped).trim();
 
       // Process fields
       switch (propName) {
@@ -233,9 +374,9 @@ export function parseVCard(rawContent: string): Contact[] {
 
         case 'N': {
           // RFC N is: Family;Given;Middle;Prefix;Suffix
-          const nParts = value.split(';');
-          familyName = (nParts[0] || '').trim();
-          givenName = (nParts[1] || '').trim();
+          const nParts = splitComponents(escaped, ';');
+          familyName = nParts[0] || '';
+          givenName = nParts[1] || '';
           break;
         }
 
@@ -274,13 +415,13 @@ export function parseVCard(rawContent: string): Contact[] {
           } else {
             eType = 'OTHER';
           }
-          emails.push({ address: value, type: eType });
+          emails.push({ address: value.replace(/^mailto:/i, ''), type: eType });
           break;
         }
 
         case 'ORG': {
           // RFC ORG is: OrgName;Department;Division
-          const orgParts = value.split(';').map(s => s.trim()).filter(Boolean);
+          const orgParts = splitComponents(escaped, ';').filter(Boolean);
           if (orgParts.length > 0) {
             organization = orgParts[0];
             if (orgParts.length > 1) {
@@ -304,13 +445,13 @@ export function parseVCard(rawContent: string): Contact[] {
 
         case 'ADR': {
           // RFC ADR is: PO Box;Extended;Street;City;Region;PostalCode;Country
-          const adrParts = value.split(';').map(s => s.trim());
+          const adrParts = splitComponents(escaped, ';');
           const street = [adrParts[0], adrParts[1], adrParts[2]].filter(Boolean).join(' ');
           const city = adrParts[3] || '';
           const region = adrParts[4] || '';
           const postalCode = adrParts[5] || '';
           const country = adrParts[6] || '';
-          
+
           const fullAddr = [country, region, city, street].filter(Boolean).join(' ');
           address = {
             street,
@@ -341,17 +482,23 @@ export function parseVCard(rawContent: string): Contact[] {
         case 'CATEGORIES':
         case 'X-CATEGORIES':
         case 'X-GROUP-MEMBERSHIP': {
-          const cats = value.split(/[,;]/).map(c => c.trim()).filter(Boolean);
+          const cats = splitEscaped(escaped, ',')
+            .flatMap(c => splitEscaped(c, ';'))
+            .map(c => unescapeVCard(c).trim())
+            .filter(Boolean);
           categories.push(...cats);
           break;
         }
 
         case 'PHOTO': {
-          if (value.startsWith('data:image') || value.startsWith('http')) {
-            photo = value;
-          } else if (params['ENCODING'] === 'BASE64' || params['B']) {
-            const photoType = params['TYPE'] ? params['TYPE'].toLowerCase() : 'jpeg';
-            photo = `data:image/${photoType};base64,${value.replace(/\s+/g, '')}`;
+          const encodingParam = params['ENCODING'] || '';
+          if (rawValue.startsWith('data:image') || /^https?:/i.test(rawValue)) {
+            photo = rawValue;
+          } else if (encodingParam === 'BASE64' || encodingParam === 'B' || params['BASE64'] || params['B']) {
+            // vCard 3.0 uses ENCODING=b, vCard 2.1 uses ENCODING=BASE64
+            const typeList = (params['TYPE'] || '').split(',').filter(t => /^[A-Z0-9.+-]+$/.test(t) && t !== 'PREF');
+            const photoType = typeList.length > 0 ? typeList[0].toLowerCase().replace(/^image\//, '') : 'jpeg';
+            photo = `data:image/${photoType};base64,${rawValue.replace(/\s+/g, '')}`;
           }
           break;
         }
@@ -373,28 +520,24 @@ export function parseVCard(rawContent: string): Contact[] {
     }
 
     // Only add if there is some useful data (name, phone, or email)
-    if (fullName || phones.length > 0 || emails.length > 0 || organization) {
-      contacts.push({
-        id: generateId(),
-        fullName: fullName || '未命名联系人',
-        familyName,
-        givenName,
-        phones,
-        emails,
-        organization,
-        department,
-        jobTitle,
-        address,
-        notes,
-        birthday,
-        website,
-        categories: Array.from(new Set(categories)),
-        photo,
-      });
-    }
-  }
-
-  return contacts;
+    if (!(fullName || phones.length > 0 || emails.length > 0 || organization)) return null;
+    return {
+      id: generateId(),
+      fullName: fullName || '未命名联系人',
+      familyName,
+      givenName,
+      phones,
+      emails,
+      organization,
+      department,
+      jobTitle,
+      address,
+      notes,
+      birthday,
+      website,
+      categories: Array.from(new Set(categories)),
+      photo,
+    };
 }
 
 /**
@@ -464,7 +607,7 @@ export function generateVCard(contacts: Contact[], options: VCardExportOptions =
     // Emails
     if (c.emails && c.emails.length > 0) {
       for (const email of c.emails) {
-        const addr = email.address.trim();
+        const addr = stripLineBreaks(email.address || '');
         if (!addr) continue;
         const type = email.type || 'INTERNET';
         if (is21) {
@@ -490,12 +633,12 @@ export function generateVCard(contacts: Contact[], options: VCardExportOptions =
 
     // Birthday
     if (c.birthday) {
-      lines.push(`BDAY:${c.birthday.replace(/\//g, '-')}`);
+      lines.push(`BDAY:${stripLineBreaks(c.birthday).replace(/\//g, '-')}`);
     }
 
     // Website
     if (c.website) {
-      lines.push(`URL:${c.website}`);
+      lines.push(`URL:${stripLineBreaks(c.website)}`);
     }
 
     // Note
