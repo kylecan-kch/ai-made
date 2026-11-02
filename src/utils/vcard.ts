@@ -482,11 +482,13 @@ function parseCardLines(lines: string[]): Contact | null {
         case 'CATEGORIES':
         case 'X-CATEGORIES':
         case 'X-GROUP-MEMBERSHIP': {
-          const cats = splitEscaped(escaped, ',')
-            .flatMap(c => splitEscaped(c, ';'))
-            .map(c => unescapeVCard(c).trim())
-            .filter(Boolean);
-          categories.push(...cats);
+          // plain loops (no flatMap) to stay portable to older mini-program JS engines
+          for (const part of splitEscaped(escaped, ',')) {
+            for (const sub of splitEscaped(part, ';')) {
+              const cat = unescapeVCard(sub).trim();
+              if (cat) categories.push(cat);
+            }
+          }
           break;
         }
 
