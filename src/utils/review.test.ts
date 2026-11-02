@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as XLSX from 'xlsx';
 import { parseVCard, generateVCard, unescapeVCard, decodeQuotedPrintable } from './vcard';
 import {
@@ -272,4 +273,16 @@ test('legacy .xls (OLE2) is rejected with a "save as .xlsx" hint; .xlsx still wo
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['姓名', '主要电话'], ['赵六', '13700000000']]), 'S');
   const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
   assert.equal(parseSpreadsheetBuffer(out)[0].fullName, '赵六');
+});
+
+test('SheetJS 0.20.3: malicious xlsx with comment ref="__proto__" does not pollute Object.prototype (CVE-2023-30533)', () => {
+  assert.equal(XLSX.version, '0.20.3');
+  const fixture = new URL('../../miniprogram-vcf/tests/fixtures/cve-2023-30533-comment-proto.xlsx', import.meta.url);
+  const bytes = readFileSync(fixture);
+  try {
+    parseSpreadsheetBuffer(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  } catch {
+    /* rejecting the file is fine too */
+  }
+  assert.equal(({} as Record<string, unknown>).c, undefined);
 });

@@ -332,7 +332,10 @@ function normalizeDateCells(ws: XLSX.WorkSheet) {
     if (cell && cell.t === 'n' && typeof cell.v === 'number' && isDateFormat(cell.z as string | undefined)) {
       cell.v = excelSerialToDate(cell.v);
       cell.t = 's';
+      // Also drop the number format: since SheetJS 0.20 sheet_to_json re-formats a cell that still carries a
+      // date format (z) and turns the yyyy-mm-dd string into "Invalid Date"
       delete cell.w;
+      delete cell.z;
     }
   }
 }

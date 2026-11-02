@@ -48,7 +48,7 @@
 ## 技术栈
 
 - React 19 + TypeScript，Vite 8 构建，Tailwind CSS 4（`@tailwindcss/vite`）
-- [SheetJS `xlsx`](https://www.npmjs.com/package/xlsx) 0.18：读写 Excel / CSV
+- [SheetJS `xlsx`](https://cdn.sheetjs.com/) 0.20.3（官方 CDN 安装，npm 上的 `xlsx` 停在有漏洞的 0.18.5）：读写 Excel / CSV
 - `lucide-react`：图标
 - esbuild：离线单文件版打包
 - Node 内置 `node:test` + `tsx`：单元测试
