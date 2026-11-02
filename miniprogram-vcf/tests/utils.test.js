@@ -291,7 +291,8 @@ END:VCARD`);
   assert.equal(res.removed, 2);
   const m = res.contacts[0];
   assert.equal(m.fullName, '张三');
-  assert.equal(m.phones.length, 3);
+  // 138-0000-0000 与 13800000000 归一化后是同一号码，只保留首个写法
+  assert.deepEqual(plain(m.phones.map(p => p.number)), ['138-0000-0000', '13900000000']);
   assert.equal(m.emails[0].address, 'z@x.com');
   assert.equal(m.notes, 'A；B');
   assert.deepEqual(plain(m.categories), ['同事']);

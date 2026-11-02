@@ -5,7 +5,17 @@
  *  - 合并：电话/邮箱去重合并、分组标签合并、备注用“；”拼接，其余字段取第一个非空值
  * 改进：原版若一个联系人同时落在“号码组”和“姓名组”里会被合并两次产生重复；
  *       这里按连通分量（并查集）合并，保证每个联系人只出现一次，且保持原有顺序。
+ *       号码比较前先归一化（与网页版 src/utils/dedupe.ts 的 phoneKey 一致）：只保留数字，
+ *       11 位大陆手机号前的 +86 / 0086 / 86 去掉，所以 "+86 138-0013-8000" 与 "13800138000" 视为同一号码；
+ *       合并时也按归一化号码去重，保留第一次出现的原始写法。
  */
+
+/** 号码比较键：只保留数字；去掉 11 位大陆手机号前的 +86 / 0086 / 86 */
+function phoneKey(raw) {
+  var digits = String(raw == null ? '' : raw).replace(/\D/g, '');
+  var m = /^(?:0086|86)(1\d{10})$/.exec(digits);
+  return m ? m[1] : digits;
+}
 
 function findDuplicateGroups(contacts) {
   var phoneMap = {};
@@ -13,7 +23,7 @@ function findDuplicateGroups(contacts) {
   var order = [];
   contacts.forEach(function (c) {
     (c.phones || []).forEach(function (p) {
-      var clean = String(p.number || '').replace(/\D/g, '');
+      var clean = phoneKey(p.number);
       if (clean.length >= 7) {
         var key = 'p:' + clean;
         if (!phoneMap[key]) { phoneMap[key] = []; order.push(key); }
@@ -52,12 +62,16 @@ function findDuplicateGroups(contacts) {
 function mergeContactList(list) {
   var base = JSON.parse(JSON.stringify(list[0]));
   var allPhones = [];
+  var seenPhones = {};
   var allEmails = [];
   var cats = [];
   var notes = [];
   list.forEach(function (c) {
     (c.phones || []).forEach(function (p) {
-      if (!allPhones.some(function (e) { return e.number === p.number; })) allPhones.push(p);
+      var key = phoneKey(p.number) || String(p.number || '');
+      if (seenPhones[key]) return;
+      seenPhones[key] = true;
+      allPhones.push(p);
     });
     (c.emails || []).forEach(function (e) {
       if (!allEmails.some(function (x) { return x.address.toLowerCase() === e.address.toLowerCase(); })) allEmails.push(e);
@@ -106,6 +120,7 @@ function mergeDuplicates(contacts) {
 }
 
 module.exports = {
+  phoneKey: phoneKey,
   findDuplicateGroups: findDuplicateGroups,
   mergeContactList: mergeContactList,
   mergeDuplicates: mergeDuplicates
