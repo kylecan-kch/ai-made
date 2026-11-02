@@ -222,4 +222,4 @@ npm run bench
 
 ## 许可证
 
-仓库中未包含 LICENSE 文件，暂未声明开源许可证。
+本项目基于 [MIT 许可证](LICENSE) 开源，版权所有 © 2026 kylecan-kch。
