@@ -263,3 +263,13 @@ test('CSV export keeps long numbers / leading 0 / + as text in Excel (no scienti
   assert.deepEqual(back.phones.map(p => p.number), ['13800138000', '+8613900139000', '07551234567']);
   assert.equal(back.address.postalCode, '010000');
 });
+
+test('legacy .xls (OLE2) is rejected with a "save as .xlsx" hint; .xlsx still works', () => {
+  const ole = new Uint8Array(512);
+  ole.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  assert.throws(() => parseSpreadsheetBuffer(toAB(ole)), /\.xls.*另存为.*\.xlsx/);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['姓名', '主要电话'], ['赵六', '13700000000']]), 'S');
+  const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  assert.equal(parseSpreadsheetBuffer(out)[0].fullName, '赵六');
+});

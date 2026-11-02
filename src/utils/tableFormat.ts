@@ -297,11 +297,17 @@ export function exportContactsToCsv(contacts: Contact[], fileName = '联系人�
   URL.revokeObjectURL(url);
 }
 
+export const XLS_UNSUPPORTED_MESSAGE =
+  '暂不支持旧版 Excel（.xls）文件。请用 Excel / WPS 打开后“另存为” .xlsx 格式（或 CSV），再导入另存后的文件。';
+
 function isBinarySpreadsheet(bytes: Uint8Array): boolean {
-  // XLSX / ODS (zip: "PK\x03\x04") or legacy XLS (OLE2: D0 CF 11 E0)
-  if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) return true;
-  if (bytes.length >= 4 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) return true;
-  return false;
+  // XLSX / ODS (zip: "PK\x03\x04")
+  return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+}
+
+/** Legacy Excel 97-2003 .xls is an OLE2 compound file (D0 CF 11 E0 A1 B1 1A E1); also catches a renamed .xls */
+export function isLegacyXls(bytes: Uint8Array): boolean {
+  return bytes.length >= 4 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0;
 }
 
 /** Excel serial date -> yyyy-mm-dd (1900 date system) */
@@ -336,6 +342,8 @@ function normalizeDateCells(ws: XLSX.WorkSheet) {
  */
 export function parseSpreadsheetBuffer(buffer: ArrayBuffer): Contact[] {
   const bytes = new Uint8Array(buffer);
+  // .xls support was dropped in 1.0.1 (same as the mini program): ask the user to re-save as .xlsx
+  if (isLegacyXls(bytes)) throw new Error(XLS_UNSUPPORTED_MESSAGE);
   let workbook: XLSX.WorkBook;
   if (isBinarySpreadsheet(bytes)) {
     workbook = XLSX.read(bytes, { type: 'array', cellNF: true });

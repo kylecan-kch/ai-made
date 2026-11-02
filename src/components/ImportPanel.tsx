@@ -15,7 +15,7 @@ import {
 import { Contact } from '../types/contact';
 import { parseVCard } from '../utils/vcard';
 import { decodeTextBuffer } from '../utils/encoding';
-import { parseSpreadsheetBuffer, FORMAT1_COLUMNS } from '../utils/tableFormat';
+import { parseSpreadsheetBuffer, FORMAT1_COLUMNS, XLS_UNSUPPORTED_MESSAGE } from '../utils/tableFormat';
 
 interface ImportPanelProps {
   onContactsImported: (contacts: Contact[], mode: 'replace' | 'append', sourceName: string) => void;
@@ -68,6 +68,10 @@ export const ImportPanel: React.FC<ImportPanelProps> = ({
   };
 
   const handleExcelFile = (file: File) => {
+    if (/\.xls$/i.test(file.name)) {
+      setStatusMessage({ type: 'error', text: XLS_UNSUPPORTED_MESSAGE });
+      return;
+    }
     const reader = new FileReader();
     reader.onload = e => {
       try {
@@ -320,7 +324,7 @@ END:VCARD`;
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                  XLS
+                  XLSX
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">
@@ -332,7 +336,7 @@ END:VCARD`;
                 </div>
               </div>
               <span className="text-[11px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                支持 .xlsx / .xls / .csv
+                支持 .xlsx / .csv
               </span>
             </div>
           </div>
@@ -362,7 +366,7 @@ END:VCARD`;
               <input
                 ref={excelInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.csv"
                 className="hidden"
                 onChange={e => {
                   if (e.target.files && e.target.files[0]) {
