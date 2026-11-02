@@ -40,6 +40,8 @@ function utf8Encode(str) {
  * UTF-8 解码。fatal=true 时遇到非法序列返回 null（用于编码探测）
  */
 function utf8Decode(bytes, fatal) {
+  // 按 WHATWG Encoding 标准实现：拒绝过长编码与代理区(ED A0..BF)，
+  // 非法/截断序列只替换“最大有效前缀”为一个 U+FFFD，后面的字节（如 ASCII）照常解码
   var parts = [];
   var chunk = [];
   var i = 0;
@@ -52,50 +54,46 @@ function utf8Decode(bytes, fatal) {
   }
   while (i < len) {
     var b = bytes[i];
-    var code = -1;
-    var need = 0;
+    var code;
     if (b < 0x80) {
       code = b;
-    } else if (b >= 0xc2 && b <= 0xdf) {
-      need = 1;
-      code = b & 0x1f;
-    } else if (b >= 0xe0 && b <= 0xef) {
-      need = 2;
-      code = b & 0x0f;
-    } else if (b >= 0xf0 && b <= 0xf4) {
-      need = 3;
-      code = b & 0x07;
-    } else {
-      if (fatal) return null;
-      chunk.push(0xfffd);
       i++;
-      continue;
-    }
-    if (need) {
-      if (i + need >= len) {
-        // 截断
-        if (fatal) return null;
-        chunk.push(0xfffd);
-        break;
+    } else {
+      var need = 0;
+      var lower = 0x80;
+      var upper = 0xbf;
+      if (b >= 0xc2 && b <= 0xdf) { need = 1; code = b & 0x1f; }
+      else if (b >= 0xe0 && b <= 0xef) {
+        need = 2; code = b & 0x0f;
+        if (b === 0xe0) lower = 0xa0;
+        if (b === 0xed) upper = 0x9f;
+      } else if (b >= 0xf0 && b <= 0xf4) {
+        need = 3; code = b & 0x07;
+        if (b === 0xf0) lower = 0x90;
+        if (b === 0xf4) upper = 0x8f;
       }
-      var ok = true;
-      for (var k = 1; k <= need; k++) {
-        var nb = bytes[i + k];
-        if (nb === undefined || (nb & 0xc0) !== 0x80) {
-          ok = false;
-          break;
-        }
-        code = (code << 6) | (nb & 0x3f);
-      }
-      if (!ok || (need === 2 && code < 0x800) || (need === 3 && (code < 0x10000 || code > 0x10ffff))) {
+      if (!need) {
         if (fatal) return null;
         chunk.push(0xfffd);
         i++;
         continue;
+      } else {
+        var k = 1;
+        for (; k <= need; k++) {
+          var nb = i + k < len ? bytes[i + k] : -1;
+          if (nb < lower || nb > upper) break;
+          code = (code << 6) | (nb & 0x3f);
+          lower = 0x80;
+          upper = 0xbf;
+        }
+        if (k <= need) {
+          if (fatal) return null;
+          chunk.push(0xfffd);
+          i += k; // 跳过已确认的前缀，出错的那个字节重新判断
+          continue;
+        }
+        i += need + 1;
       }
-      i += need + 1;
-    } else {
-      i++;
     }
     if (code >= 0x10000) {
       code -= 0x10000;

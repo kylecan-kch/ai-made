@@ -186,7 +186,9 @@ function parseCsvToArray(text, delimiter) {
       } else {
         field += ch;
       }
-    } else if (ch === '"') {
+    } else if (ch === '"' && field === '') {
+      // 只有字段开头的引号才开启引用；字段中间的引号（如 24" 显示器）按普通字符处理，
+      // 否则会把后面整份文件吞进同一个字段（与 SheetJS 的 CSV 解析行为一致）
       inQuotes = true;
     } else if (ch === delimiter) {
       row.push(field); field = '';
@@ -205,7 +207,17 @@ function parseCsvToArray(text, delimiter) {
 /** 二维数组（首行表头）-> 对象数组，等价于 sheet_to_json(defval:'') */
 function arrayToObjects(rows) {
   if (!rows.length) return [];
-  var header = rows[0].map(function (h) { return String(h).trim(); });
+  // 重复表头按 SheetJS sheet_to_json 的规则改名为 "电话_1"、"电话_2"，避免后一列覆盖前一列
+  var seenHeader = {};
+  var header = rows[0].map(function (h) {
+    h = String(h).trim();
+    if (!h) return h;
+    var name = h;
+    var n = 0;
+    while (seenHeader.hasOwnProperty('$' + name)) name = h + '_' + (++n);
+    seenHeader['$' + name] = true;
+    return name;
+  });
   return rows.slice(1).map(function (r) {
     var obj = {};
     header.forEach(function (h, idx) { if (h) obj[h] = r[idx] !== undefined ? r[idx] : ''; });
@@ -213,13 +225,47 @@ function arrayToObjects(rows) {
   });
 }
 
-function parseCsvText(text) {
-  return format1RowsToContacts(arrayToObjects(parseCsvToArray(text)));
+/*
+ * Excel 安全的 CSV 单元格（导出与导入互逆）：
+ *  1) 号码类值（只含 + 数字 空格 - ( )，且 以 + 开头 / 以 0 开头 / 不少于 11 位数字）
+ *     导出为 ="..." 公式文本：Excel 显示为原样文本，不会变成 1.38E+10、不丢前导 0 和 +。
+ *     号码字符集受白名单限制，不可能夹带其它公式，所以“以 + 开头”在这里不按注入处理。
+ *  2) 其它以 = + - @ Tab CR 开头的值（OWASP CSV 注入）前置一个单引号 ' 并加引号；
+ *     原值本身就是 "'...=" 这种形式时再多加一个 '，保证导入时去掉一个 ' 后完全还原。
+ *  3) 其余按 RFC 4180：含 , " CR LF 时加双引号，内部 " 写成 ""。
+ */
+var PHONE_LIKE_RE = /^\+?[0-9][0-9 \-()]*$/;
+var FORMULA_TRIGGER_RE = /^'*[=+\-@\t\r]/;
+
+function isPhoneLike(s) {
+  if (!PHONE_LIKE_RE.test(s) || s.length > 200) return false;
+  if (s.charAt(0) === '+' || s.charAt(0) === '0') return true;
+  return s.replace(/\D/g, '').length >= 11;
+}
+
+function csvQuote(s) {
+  return '"' + s.replace(/"/g, '""') + '"';
 }
 
 function csvEscape(v) {
   var s = v == null ? '' : String(v);
-  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  if (isPhoneLike(s)) return csvQuote('="' + s + '"');
+  if (FORMULA_TRIGGER_RE.test(s)) return csvQuote("'" + s);
+  return /[",\r\n]/.test(s) ? csvQuote(s) : s;
+}
+
+/** csvEscape 的逆过程（作用于 RFC 4180 反引号之后的单元格值） */
+function csvUnescapeCell(v) {
+  var s = String(v);
+  var m = /^="([^"]*)"$/.exec(s);
+  if (m && isPhoneLike(m[1])) return m[1];
+  if (/^'+[=+\-@\t\r]/.test(s)) return s.substring(1);
+  return s;
+}
+
+function parseCsvText(text) {
+  var rows = parseCsvToArray(text).map(function (r) { return r.map(csvUnescapeCell); });
+  return format1RowsToContacts(arrayToObjects(rows));
 }
 
 /** 联系人 -> CSV 文本（带 UTF-8 BOM，Excel 打开中文不乱码） */
@@ -247,7 +293,17 @@ function parseSpreadsheetBuffer(buffer) {
   var workbook = XLSX.read(data, { type: 'array' });
   var firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) return [];
-  var rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { defval: '' });
+  var sheet = workbook.Sheets[firstSheetName];
+  // 用数字格式补了前导 0 的单元格（如格式 "00000000000" 的 07551234567、邮编 010080）：
+  // raw 数值会丢掉前导 0，这里改用显示文本。其它数字（手机号等）仍取原值，避免 General 格式变成科学计数法
+  Object.keys(sheet).forEach(function (addr) {
+    var cell = sheet[addr];
+    if (addr.charAt(0) !== '!' && cell && cell.t === 'n' && typeof cell.w === 'string' && /^0\d+$/.test(cell.w)) {
+      cell.t = 's';
+      cell.v = cell.w;
+    }
+  });
+  var rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
   return format1RowsToContacts(rawRows);
 }
 
@@ -415,6 +471,8 @@ module.exports = {
   parseCsvToArray: parseCsvToArray,
   parseCsvText: parseCsvText,
   contactsToCsv: contactsToCsv,
+  csvEscape: csvEscape,
+  csvUnescapeCell: csvUnescapeCell,
   parseSpreadsheetBuffer: parseSpreadsheetBuffer,
   contactsToXlsxBuffer: contactsToXlsxBuffer,
   getDemoContacts: getDemoContacts
