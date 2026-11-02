@@ -252,6 +252,8 @@ Page({
   },
 
   applyImported: function (list, source) {
+    // PHOTO（base64 头像）在小程序中既不展示也不导出，保留只会撑爆本地缓存（单 key 1MB / 总 10MB）和内存
+    list.forEach(function (c) { if (c && c.photo) delete c.photo; });
     var append = this.data.importModeIndex === 1;
     if (append) {
       this.contacts = this.contacts.concat(list);
@@ -360,10 +362,23 @@ Page({
   },
 
   toggleSelect: function (e) {
+    var self = this;
     var id = e.currentTarget.dataset.id;
     if (this.selected[id]) delete this.selected[id];
     else this.selected[id] = true;
-    this.refresh();
+    // 只更新被点击那一项的 checked，避免每次勾选都把整页列表重新 setData（加载多页后可能超过 1MB 限制）
+    var key = this.data.viewMode === 'table' ? 'tableRows' : 'list';
+    var arr = this.data[key] || [];
+    var idx = -1;
+    for (var i = 0; i < arr.length; i++) if (arr[i].id === id) { idx = i; break; }
+    if (idx === -1) { this.refresh(); return; }
+    var filtered = this.getFiltered();
+    var data = {
+      selectedCount: Object.keys(this.selected).length,
+      allSelected: filtered.length > 0 && filtered.every(function (c) { return self.selected[c.id]; })
+    };
+    data[key + '[' + idx + '].checked'] = !!this.selected[id];
+    this.setData(data);
   },
 
   toggleSelectAll: function () {

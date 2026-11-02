@@ -68,11 +68,42 @@ function encodeQuotedPrintable(str) {
 
 function unescapeVCard(val) {
   if (!val) return '';
-  return val
-    .replace(/\\n/gi, '\n')
-    .replace(/\\,/g, ',')
-    .replace(/\\;/g, ';')
-    .replace(/\\\\/g, '\\');
+  // 单遍替换：避免 "\\n"（转义的反斜杠 + n）被误判为换行
+  return String(val).replace(/\\([\\,;:nN])/g, function (_, ch) {
+    return ch === 'n' || ch === 'N' ? '\n' : ch;
+  });
+}
+
+/** 按未被反斜杠转义的分隔符切分（用于 N / ORG / ADR / CATEGORIES 等结构化值），各分量再反转义 */
+function splitEscaped(val, sepRe) {
+  var parts = [];
+  var cur = '';
+  val = String(val || '');
+  for (var i = 0; i < val.length; i++) {
+    var ch = val[i];
+    if (ch === '\\' && i + 1 < val.length) {
+      cur += ch + val[i + 1];
+      i++;
+    } else if (sepRe.test(ch)) {
+      parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  parts.push(cur);
+  return parts.map(unescapeVCard);
+}
+
+/** 找到属性名/参数与值之间的冒号（跳过参数里双引号内的冒号） */
+function findValueColon(line) {
+  var inQuote = false;
+  for (var i = 0; i < line.length; i++) {
+    var ch = line[i];
+    if (ch === '"') inQuote = !inQuote;
+    else if (ch === ':' && !inQuote) return i;
+  }
+  return line.indexOf(':');
 }
 
 function escapeVCard(val) {
@@ -128,22 +159,57 @@ function emptyAddress() {
   return { street: '', city: '', region: '', postalCode: '', country: '', fullAddress: '' };
 }
 
-/** 把行拆开，处理 RFC 折行与 QP 软换行 */
-function splitLines(cardContent) {
-  var raw = cardContent.split(/\r\n|\n|\r/);
-  var lines = [];
+/**
+ * 把整份文本拆成“逻辑行”，并按行切分出每张名片的属性行：
+ *  - RFC 2425/6350 折行：下一行以空格/Tab 开头视为续行（去掉 1 个空白）
+ *  - vCard 2.1 QP 软换行：QUOTED-PRINTABLE 属性行以 "=" 结尾时与下一行拼接
+ *    （先于 RFC 折行处理，避免 "=" + " =E5" 拼出多余的 "="）
+ *  - BEGIN:VCARD / END:VCARD 必须独占一行才算边界（NOTE 正文里出现 END:VCARD 不会截断）
+ * @returns {string[][]} 每张名片的属性行（已 trim，去空行）
+ */
+function splitCards(text) {
+  var raw = text.split(/\r\n|\n|\r/);
+  var logical = [];
+  var cur = null;
+  var curIsQP = false;
   for (var i = 0; i < raw.length; i++) {
     var line = raw[i];
-    // QP 软换行：属性含 QUOTED-PRINTABLE 且行尾为 "="，与下一行拼接
-    if (/QUOTED-PRINTABLE/i.test(line.split(':')[0])) {
-      while (/=$/.test(line) && i + 1 < raw.length) {
-        line = line.slice(0, -1) + raw[++i].replace(/^[ \t]/, '');
-      }
+    if (cur !== null && curIsQP && /=$/.test(cur)) {
+      cur = cur.slice(0, -1) + line.replace(/^[ \t]/, '');
+      continue;
     }
-    line = line.trim();
-    if (line) lines.push(line);
+    if (cur !== null && /^[ \t]/.test(line)) {
+      cur += line.substring(1);
+      continue;
+    }
+    if (cur !== null) logical.push(cur);
+    cur = line;
+    var c = findValueColon(line);
+    curIsQP = /QUOTED-PRINTABLE/i.test(c === -1 ? line : line.substring(0, c));
   }
-  return lines;
+  if (cur !== null) logical.push(cur);
+
+  var cards = [];
+  var lines = null;
+  var depth = 0;
+  for (var j = 0; j < logical.length; j++) {
+    var t = logical[j].trim();
+    if (!t) continue;
+    var upper = t.toUpperCase();
+    if (upper === 'BEGIN:VCARD') {
+      if (lines === null) { lines = []; depth = 1; continue; }
+      depth++; // 嵌套（如 2.1 AGENT），忽略其内容
+      continue;
+    }
+    if (upper === 'END:VCARD') {
+      if (lines === null) continue;
+      depth--;
+      if (depth === 0) { cards.push(lines); lines = null; }
+      continue;
+    }
+    if (lines !== null && depth === 1) lines.push(t);
+  }
+  return cards;
 }
 
 /** 解析 .vcf 文本为联系人数组 */
@@ -151,16 +217,11 @@ function parseVCard(rawContent) {
   if (!rawContent || !String(rawContent).trim()) return [];
   rawContent = String(rawContent).replace(/^\uFEFF/, '');
 
-  // 1. RFC 折行：换行后紧跟空格/Tab 视为续行
-  var unfolded = rawContent.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '').replace(/\r[ \t]/g, '');
-
-  // 2. 按 BEGIN:VCARD ... END:VCARD 切分
-  var cardRegex = /BEGIN:VCARD([\s\S]*?)END:VCARD/gi;
+  var cards = splitCards(rawContent);
   var contacts = [];
-  var match;
 
-  while ((match = cardRegex.exec(unfolded)) !== null) {
-    var lines = splitLines(match[1]);
+  for (var ci = 0; ci < cards.length; ci++) {
+    var lines = cards[ci];
 
     var fullName = '';
     var familyName = '';
@@ -179,7 +240,7 @@ function parseVCard(rawContent) {
 
     for (var li = 0; li < lines.length; li++) {
       var line = lines[li];
-      var colonIdx = line.indexOf(':');
+      var colonIdx = findValueColon(line);
       if (colonIdx === -1) continue;
 
       var propAndParams = line.substring(0, colonIdx).trim();
@@ -206,7 +267,10 @@ function parseVCard(rawContent) {
 
       var isQP = params['ENCODING'] === 'QUOTED-PRINTABLE' || params.hasOwnProperty('QUOTED-PRINTABLE');
       var charset = params['CHARSET'] || 'UTF-8';
-      value = isQP ? decodeQuotedPrintable(value, charset) : unescapeVCard(value);
+      var rawValue = isQP ? decodeQuotedPrintable(value, charset) : value;
+      value = isQP ? rawValue : unescapeVCard(rawValue);
+      // 结构化属性按“未转义的”分隔符切分，"\;" "\," 保留为字面字符
+      var parts = function (sepRe) { return splitEscaped(rawValue, sepRe || /;/); };
 
       var typeParam = params['TYPE'] || '';
       switch (propName) {
@@ -215,7 +279,7 @@ function parseVCard(rawContent) {
           break;
 
         case 'N': {
-          var nParts = value.split(';');
+          var nParts = parts();
           familyName = (nParts[0] || '').trim();
           givenName = (nParts[1] || '').trim();
           break;
@@ -244,7 +308,7 @@ function parseVCard(rawContent) {
         }
 
         case 'ORG': {
-          var orgParts = value.split(';').map(function (s) { return s.trim(); }).filter(Boolean);
+          var orgParts = parts().map(function (s) { return s.trim(); }).filter(Boolean);
           if (orgParts.length > 0) {
             organization = orgParts[0];
             if (orgParts.length > 1) department = orgParts.slice(1).join(' / ');
@@ -261,7 +325,7 @@ function parseVCard(rawContent) {
           break;
 
         case 'ADR': {
-          var a = value.split(';').map(function (s) { return s.trim(); });
+          var a = parts().map(function (s) { return s.trim(); });
           var street = [a[0], a[1], a[2]].filter(Boolean).join(' ');
           var city = a[3] || '';
           var region = a[4] || '';
@@ -293,7 +357,7 @@ function parseVCard(rawContent) {
         case 'CATEGORIES':
         case 'X-CATEGORIES':
         case 'X-GROUP-MEMBERSHIP': {
-          var cats = value.split(/[,;]/).map(function (c) { return c.trim(); }).filter(Boolean);
+          var cats = parts(/[,;]/).map(function (c) { return c.trim(); }).filter(Boolean);
           categories = categories.concat(cats);
           break;
         }
@@ -440,6 +504,7 @@ module.exports = {
   encodeQuotedPrintable: encodeQuotedPrintable,
   unescapeVCard: unescapeVCard,
   escapeVCard: escapeVCard,
+  splitEscaped: splitEscaped,
   generateId: generateId,
   splitFullName: splitFullName,
   normalizePhone: normalizePhone,

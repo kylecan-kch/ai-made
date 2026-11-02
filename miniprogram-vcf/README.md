@@ -57,6 +57,7 @@ miniprogram-vcf/
 │   └── xlsx.LICENSE.txt
 └── tests/                   # Node 测试（不会被打包进小程序）
     ├── utils.test.js        # 工具函数测试（在“无 Buffer/TextDecoder/DOM”的沙箱中运行）
+    ├── vcard.edge.test.js   # vCard 2.1/3.0/4.0 边界（转义、折行、QP、嵌套、PHOTO、大文件、GB18030 四字节）
     ├── page.smoke.test.js   # 用模拟 wx 跑通页面完整流程
     ├── validate.test.js     # JSON、页面文件、WXML 闭合、事件函数、禁用 API、包体积校验
     └── sandbox.js

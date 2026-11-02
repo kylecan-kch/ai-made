@@ -67,7 +67,16 @@ function createEnv() {
   // 构造页面实例（模拟 setData）
   const page = Object.assign({}, pageDef);
   page.data = JSON.parse(JSON.stringify(pageDef.data));
-  page.setData = function (d) { Object.assign(this.data, JSON.parse(JSON.stringify(d))); };
+  // 模拟 setData，支持 'list[3].checked' 这类数据路径
+  page.setData = function (d) {
+    const copy = JSON.parse(JSON.stringify(d));
+    for (const k of Object.keys(copy)) {
+      const segs = k.replace(/\[(\d+)\]/g, '.$1').split('.');
+      let o = this.data;
+      for (let i = 0; i < segs.length - 1; i++) o = o[segs[i]];
+      o[segs[segs.length - 1]] = copy[k];
+    }
+  };
   const env = { page, calls, storage, nextFile: null, setModal: v => { modalAnswer = v; } };
   page.onLoad();
   return env;
@@ -202,4 +211,44 @@ test('页面完整流程', () => {
   env.nextFile = { path: badX, name: 'bad.xlsx', size: 9 };
   page.chooseFile();
   assert.ok(/解析失败|未识别/.test(calls.modal[calls.modal.length - 1].title));
+});
+
+test('勾选只增量 setData 被点的那一项；导入时丢弃 PHOTO 以免撑爆本地缓存', () => {
+  const env = createEnv();
+  const { page, storage } = env;
+  const parts = [];
+  for (let i = 0; i < 250; i++) {
+    parts.push('BEGIN:VCARD\r\nVERSION:3.0\r\nFN:人' + i + '\r\nTEL:1390000' + String(i).padStart(4, '0') +
+      '\r\nPHOTO;ENCODING=b;TYPE=JPEG:' + 'A'.repeat(4000) + '\r\nEND:VCARD');
+  }
+  const f = path.join(TMP, 'photos.vcf');
+  fs.writeFileSync(f, parts.join('\r\n'));
+  env.nextFile = { path: f, name: 'photos.vcf', size: 100 };
+  page.chooseFile();
+  assert.equal(page.data.total, 250);
+  assert.ok(storage.k.every(c => !c.photo), '缓存中不应包含 photo');
+  assert.ok(JSON.stringify(storage.k).length < 100 * 1024);
+
+  page.loadMore();
+  assert.equal(page.data.list.length, 200);
+  const payloads = [];
+  const orig = page.setData;
+  page.setData = function (d) { payloads.push(d); return orig.call(this, d); };
+  page.toggleSelect(ev({ id: page.data.list[150].id }));
+  assert.equal(page.data.list[150].checked, true);
+  assert.equal(page.data.selectedCount, 1);
+  assert.equal(page.data.allSelected, false);
+  assert.ok(!('list' in payloads[0]), '不应重发整页列表');
+  page.toggleSelect(ev({ id: page.data.list[150].id }));
+  assert.equal(page.data.list[150].checked, false);
+  assert.equal(page.data.selectedCount, 0);
+  page.setData = orig;
+
+  // 表格视图同样适用
+  page.switchView(ev({ mode: 'table' }));
+  page.toggleSelect(ev({ id: page.data.tableRows[3].id }));
+  assert.equal(page.data.tableRows[3].checked, true);
+  page.toggleSelectAll();
+  assert.equal(page.data.allSelected, true);
+  assert.equal(page.data.selectedCount, 250);
 });
