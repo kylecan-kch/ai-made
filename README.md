@@ -2,7 +2,7 @@
 
 **VCF Contacts Hub** · VCF 联系人 ⇄ 表格互转
 
-> 草稿：本文档根据 `main` 分支（提交 `ed6f36b`）的源码整理，所有功能描述均可在代码中找到对应实现。
+> 草稿：本文档根据 `1.0.1` 分支（`package.json` 版本 1.0.1，提交 `c2a295d`）的源码整理，所有功能描述均可在代码中找到对应实现。
 
 一个纯前端的通讯录转换工具：把 `.vcf / .vcard` 联系人文件解析成表格（“格式1”），也可以把 Excel / CSV 表格转回 `.vcf`。所有解析、编辑、导出都在浏览器本地完成，不上传任何数据。另外可以下载一个**单文件离线 HTML**，双击即可离线使用。
 
@@ -12,9 +12,10 @@
 ## 功能一览
 
 **导入**
-- 上传 `.vcf` / `.vcard` 文件（点击选择或拖拽，一次一个文件），按 UTF-8 读取
+- 上传 `.vcf` / `.vcard` 文件（点击选择或拖拽，一次一个文件），自动识别文件编码：UTF-8（有无 BOM 均可）、UTF-16（带 BOM）、GBK/GB2312（按 GB18030 解码）
 - 直接粘贴 `BEGIN:VCARD … END:VCARD` 文本解析；提供“填入测试 vCard 代码”示例
-- 上传 `.xlsx` / `.csv` 表格（读取第一个工作表，首行为表头），按列名自动映射到联系人字段
+- 上传 `.xlsx` / `.csv` 表格（首行为表头），按列名自动映射到联系人字段；会依次尝试各个工作表，使用第一个能识别出联系人的工作表（例如跳过“说明”封面页）
+- 不支持旧版 Excel `.xls`：选择 `.xls` 文件（或改了扩展名的 `.xls`）会提示先用 Excel / WPS“另存为” `.xlsx` 或 CSV
 - 两种导入模式：**覆盖现有数据**（默认）或 **追加合并到现有**（追加时不自动去重）
 
 **表格（格式1）视图**
@@ -31,12 +32,15 @@
 - 按 `Esc` 关闭
 
 **查重合并**
-- 判定重复：电话号码去掉非数字字符后完全相同（至少 7 位），或姓名（去首尾空格、不区分大小写）完全相同
-- “一键合并全部重复项”：以组内第一条为基础，合并电话（号码字符串相同才算重复）、邮箱（不区分大小写）、分组标签（并集）、备注（不同备注用 `；` 连接），其余字段为空时从其他条目补齐
+- 判定重复：电话号码只保留数字后完全相同（至少 7 位；11 位手机号前的 `+86` / `0086` / `86` 会被去掉，所以 `+86 138-0013-8000` 与 `13800138000` 算同一个号码），或姓名（去首尾空格、连续空格视为一个、不区分大小写）完全相同
+- 分组可传递：A 与 B 电话相同、A 与 C 同名时，A、B、C 归为同一组，每个联系人只会出现在一个组里
+- “一键合并全部重复项”：以组内第一条为基础，合并电话（按上面的规则归一化后去重）、邮箱（不区分大小写）、分组标签（并集）、备注（不同备注用 `；` 连接）；姓/名、公司、部门、职位、地址、生日、网址、头像为空时从其他条目补齐；合并后的记录留在该组第一条原来的位置，其余联系人顺序不变
 
 **导出**
 - `.vcf`：可选 vCard **3.0**（默认）/ **2.1** / **4.0**；2.1 可选 UTF-8 纯文本或 Quoted-Printable；导出范围可选“全部”或“已选中”；可自定义文件名（默认 `contacts_export_YYYYMMDD.vcf`）；右侧实时预览源码并可复制
-- Excel（`联系人数据_格式1.xlsx`，工作表名 `格式1_联系人表`）/ CSV（`联系人数据_格式1.csv`，UTF-8 带 BOM，Excel 打开中文不乱码）
+- Excel（`联系人数据_格式1.xlsx`，工作表名 `格式1_联系人表`，所有单元格写为文本）/ CSV（`联系人数据_格式1.csv`，UTF-8 带 BOM，Excel 打开中文不乱码）
+- 每个联系人的全部电话都会导出：第 1 个写入“主要电话”，第 2 个及以后全部写入“备用电话”，用英文分号 `;` 分隔
+- CSV 防 Excel 误转换（仅 CSV，xlsx 不做此处理）：任意列中“像电话号码”的值（只含数字、空格、`-`、`(`、`)`，可带前导 `+`，并且以 `+` 或 `0` 开头、或至少 11 位数字）写成 `="…"`，Excel / WPS 打开时按原样显示，不会变成 `1.38E+10`，也不会丢掉前导 `0` 或 `+`；以 `=`、`@`、制表符、回车开头的值，以及以 `+` / `-` 开头但不是数字的值，会在前面加 `'`，防止被当成公式执行。“备用电话”含多个号码（有 `;`）时不属于“像电话号码”，不加 `="…"`。重新导入本工具时会自动还原这两种写法
 - 下载格式1模板：`联系人信息标准表格_格式1.xlsx`（内容是 5 条演示联系人）
 
 **其他**
@@ -48,7 +52,7 @@
 ## 技术栈
 
 - React 19 + TypeScript，Vite 8 构建，Tailwind CSS 4（`@tailwindcss/vite`）
-- [SheetJS `xlsx`](https://cdn.sheetjs.com/) 0.20.3（官方 CDN 安装，npm 上的 `xlsx` 停在有漏洞的 0.18.5）：读写 Excel / CSV
+- [SheetJS `xlsx`](https://cdn.sheetjs.com/) 0.20.3（从 cdn.sheetjs.com 安装，npm 上的 xlsx 停在 0.18.5）：读写 Excel / CSV
 - `lucide-react`：图标
 - esbuild：离线单文件版打包
 - Node 内置 `node:test` + `tsx`：单元测试
@@ -80,10 +84,12 @@ npm run lint         # = tsc --noEmit
 npm run clean
 ```
 
-运行单元测试（`package.json` 里目前没有 `test` 脚本，需要直接调用）：
-
 ```bash
-npx tsx --test src/utils/vcard.test.ts
+# 单元测试（= tsx --test src/utils/*.test.ts）
+npm test
+
+# 性能基准（= tsx scripts/bench-contacts.ts）
+npm run bench
 ```
 
 ## 环境变量
@@ -110,7 +116,8 @@ npx tsx --test src/utils/vcard.test.ts
 ├── metadata.json                 # AI Studio 应用元数据（名称、描述）
 ├── .env.example                  # 环境变量示例（AI Studio 模板）
 ├── scripts/
-│   └── build-offline-html.js     # 生成单文件离线 HTML 的脚本
+│   ├── build-offline-html.js     # 生成单文件离线 HTML 的脚本
+│   └── bench-contacts.ts         # 解析/转换性能基准（npm run bench）
 ├── public/
 │   ├── standalone.html           # 预构建的离线单文件版（供网页内“打包离线网页”下载）
 │   └── assets/aistudio/…png      # 图片资源
@@ -129,9 +136,13 @@ npx tsx --test src/utils/vcard.test.ts
 │   │   └── OfflineDownloadModal.tsx # 离线单文件版下载弹窗
 │   └── utils/
 │       ├── vcard.ts              # vCard 解析与生成、Quoted-Printable 编解码、姓名拆分
-│       ├── tableFormat.ts        # 格式1 列定义、表格⇄联系人转换、Excel/CSV 导出、演示数据
+│       ├── tableFormat.ts        # 格式1 列定义、表格⇄联系人转换、Excel/CSV 导出（含 CSV 防误转换）、演示数据
+│       ├── dedupe.ts             # 查重分组与合并
+│       ├── encoding.ts           # 导入文件编码识别（UTF-8 / UTF-16 / GB18030）
 │       ├── offlinePackager.ts    # 下载离线单文件 HTML
-│       └── vcard.test.ts         # 单元测试（node:test）
+│       ├── vcard.test.ts         # 单元测试（node:test）
+│       └── review.test.ts        # 单元测试（node:test）
+├── miniprogram-vcf/              # 微信小程序版（说明见其中的 README.md）
 ├── VCF表格互转离线封包版.html      # 早期提交的离线版（旧名称 “VCF Contacts Hub”）
 ├── r12-search-phone-highlight.png # 截图：电话搜索高亮
 └── r13-standalone-html-working.png # 截图：离线版运行效果
@@ -153,10 +164,11 @@ npx tsx --test src/utils/vcard.test.ts
 ## vCard 支持说明
 
 **读取**（`parseVCard`）
-- 支持 vCard 2.1 / 3.0 / 4.0 文本，自动处理折行（换行后跟空格/制表符）
+- 支持 vCard 2.1 / 3.0 / 4.0 文本，自动处理折行（换行后跟空格/制表符）以及 Quoted-Printable 的 `=` 软换行
+- 支持带分组前缀的属性（如 `item1.TEL`）；`EMAIL` 值前的 `mailto:` 会被去掉；转义的 `\;`、`\,` 不会被当作分隔符
 - 识别的属性：`FN`、`N`（只取姓、名）、`TEL`、`EMAIL`、`ORG`（第一段为公司，其余段用 ` / ` 连接为部门）、`TITLE`、`ROLE`（部门为空时当作部门）、`ADR`、`NOTE`、`BDAY`、`URL`、`CATEGORIES` / `X-CATEGORIES` / `X-GROUP-MEMBERSHIP`、`PHOTO`（Base64 或 URL，仅用于头像显示）
 - 电话类型：`WORK`→工作，`HOME`→住宅，`MAIN`→主要，`OTHER`→其他，其余默认手机；`tel:` 前缀会被去掉
-- 支持 `ENCODING=QUOTED-PRINTABLE`；`CHARSET` 含 `GB` 时按 GBK 解码，否则按 UTF-8
+- 支持 `ENCODING=QUOTED-PRINTABLE`；`CHARSET` 为 `GB2312` / `GBK` / `CP936` / `GB18030` 时按 GB18030 解码，其他字符集交给浏览器解码（不认识时按 UTF-8），未声明时按 UTF-8
 - 只有 FN 没有 N 时自动拆分姓/名；姓名、电话、邮箱、公司全为空的卡片会被跳过；没有姓名的显示为“未命名联系人”
 - 其他属性（如昵称 `NICKNAME`、各类 `X-` 扩展字段）会被忽略
 
@@ -189,15 +201,22 @@ npx tsx --test src/utils/vcard.test.ts
 
 完整别名列表见 `src/utils/tableFormat.ts` 中的 `format1RowsToContacts`。
 
+导入时的其他处理：
+- 同一字段有多个别名列时，取第一个**非空**的列（例如“手机”列为空、“电话”列有值时用“电话”列）
+- CSV 按 UTF-8（有无 BOM）/ UTF-16 / GB18030 自动识别编码，单元格按原文读取（前导 `0`、`+86` 不会被转成数字）
+- `.xlsx` 中设为日期格式的单元格（如“生日”）会转成 `yyyy-mm-dd` 文本
+- 本工具导出 CSV 时写入的 `="…"` 和前导 `'` 会被还原
+
 ## 已知限制
 
-- `.vcf` 文件固定按 UTF-8 读取；整个文件是 GBK/GB2312 编码（非 Quoted-Printable）时会乱码
 - 每个联系人只保留**一个地址**（多个 `ADR` 时取最后一个）；`N` 中的中间名、前缀、后缀会被丢弃
 - 头像 `PHOTO` 只用于显示，**不会**导出到 vCard 或表格
-- 导出表格时只写出前两个电话（主要电话、备用电话），第三个及以后的电话会丢失；所有邮箱合并在“电子邮箱”一列，用 `; ` 分隔
+- 表格中第 2 个及以后的电话都放在“备用电话”一格（`;` 分隔），但“电话类型2”只记录第 2 个电话的类型；重新导入时这些号码会按分隔符拆回多个电话，但都使用“电话类型2”的类型（默认工作）
+- 所有邮箱合并在“电子邮箱”一列，用 `; ` 分隔
 - 表格导入时所有邮箱类型都记为“工作”；`电话类型1` 只区分工作/住宅/手机，`电话类型2` 默认是“工作”（含“家/宅”时为住宅），所以“主要”“其他”等类型往返转换后会变化
 - 表格导入时电话号码会去掉空格和 `-`；VCF 导入保留原样
-- 同一次只处理一个文件（多选/拖入多个时只取第一个）；表格只读取第一个工作表
+- 同一次只处理一个文件（多选/拖入多个时只取第一个）；表格只使用一个工作表（第一个能识别出联系人的）
+- 不支持 `.xls`，需要先另存为 `.xlsx` 或 CSV
 - 追加导入不会自动去重，需要手动点「查重合并」
 - 数据只保存在当前浏览器的 `localStorage`，换浏览器/清缓存后丢失
 
