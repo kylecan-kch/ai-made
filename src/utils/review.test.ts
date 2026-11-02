@@ -165,7 +165,7 @@ test('CSV export guards formula injection but leaves phone numbers alone, and im
   assert.equal(guardCsvCell('=HYPERLINK("http://evil")'), `'=HYPERLINK("http://evil")`);
   assert.equal(guardCsvCell('@SUM(1)'), `'@SUM(1)`);
   assert.equal(guardCsvCell('+cmd|calc'), `'+cmd|calc`);
-  assert.equal(guardCsvCell('+86 138-0013-8000'), '+86 138-0013-8000');
+  assert.equal(guardCsvCell('+86 138-0013-8000'), '="+86 138-0013-8000"');
   assert.equal(guardCsvCell('-'), '-');
   const c = mk('x', '=1+1', ['+8613800138000'], { notes: '@evil' });
   const csv = contactsToCsvString([c]);
@@ -242,4 +242,24 @@ test('merge keeps union of data and does not mutate inputs', () => {
   m.address.city = 'changed';
   assert.equal(B.address.city, '上海');
   assert.equal(A.phones.length, 1);
+});
+
+test('CSV export keeps long numbers / leading 0 / + as text in Excel (no scientific notation) and import reverses it', () => {
+  assert.equal(guardCsvCell('13800138000'), '="13800138000"');
+  assert.equal(guardCsvCell('013800138000'), '="013800138000"');
+  assert.equal(guardCsvCell('+8613800138000'), '="+8613800138000"');
+  assert.equal(guardCsvCell('010000'), '="010000"');
+  assert.equal(guardCsvCell('100080'), '100080');
+  assert.equal(guardCsvCell('1988-06-15'), '1988-06-15');
+  assert.equal(guardCsvCell('-'), '-');
+  assert.equal(guardCsvCell('=1+1'), `'=1+1`);
+  const c = mk('x', '张三', ['13800138000', '+8613900139000', '07551234567'], {
+    address: { street: '', city: '', region: '', postalCode: '010000', country: '', fullAddress: '' },
+  });
+  const csv = contactsToCsvString([c]);
+  assert.ok(csv.includes('"=""13800138000"""'), csv);
+  assert.ok(!/(^|,)13800138000(,|$)/m.test(csv));
+  const [back] = parseSpreadsheetBuffer(toAB(enc(csv)));
+  assert.deepEqual(back.phones.map(p => p.number), ['13800138000', '+8613900139000', '07551234567']);
+  assert.equal(back.address.postalCode, '010000');
 });

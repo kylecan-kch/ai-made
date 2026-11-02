@@ -87,7 +87,22 @@ function cachedNormalizeKey(key: string): string {
  * Undo the CSV formula-injection guard added on export ("'=..." -> "=...")
  */
 function unguardCell(val: string): string {
+  const m = /^="([^"]*)"$/.exec(val);
+  if (m && isPhoneLike(m[1])) return m[1];
   return /^'[=+\-@\t\r]/.test(val) ? val.substring(1) : val;
+}
+
+const PHONE_LIKE_RE = /^\+?[0-9][0-9 \-()]*$/;
+
+/**
+ * Phone-number-like values (only + digits spaces - ( ), and starting with + or 0, or with >= 11 digits).
+ * Excel turns these into 1.38E+10 or drops leading 0 / "+" when it opens a CSV, so they are exported as ="...".
+ * The character whitelist means such a value can never smuggle in another formula.
+ */
+function isPhoneLike(s: string): boolean {
+  if (s.length > 200 || !PHONE_LIKE_RE.test(s)) return false;
+  if (s[0] === '+' || s[0] === '0') return true;
+  return s.replace(/\D/g, '').length >= 11;
 }
 
 /**
@@ -240,11 +255,14 @@ export function exportContactsToExcel(contacts: Contact[], fileName = '联系人
 }
 
 /**
- * Guard against CSV / formula injection (=, +, -, @, TAB, CR prefixes) when the CSV is opened in Excel/WPS.
- * Plain phone numbers such as "+8613800138000" or "-" are left untouched so they stay usable.
+ * Make a cell safe for opening the CSV in Excel/WPS:
+ *  - phone-number-like values (13800138000, 013800138000, +8613800138000, 010000) are written as ="..." so Excel
+ *    shows them verbatim as text instead of 1.38E+10 / dropping the leading 0 or "+"; import reverses this.
+ *  - other values starting with =, +, -, @, TAB, CR get a leading ' (CSV / formula injection); import reverses this.
  */
 export function guardCsvCell(val: string): string {
   if (!val) return val;
+  if (isPhoneLike(val)) return '="' + val + '"';
   if (/^[=@\t\r]/.test(val)) return "'" + val;
   if (/^[+-]/.test(val) && !/^[+-]?[\d\s().-]*$/.test(val)) return "'" + val;
   return val;
