@@ -1,0 +1,103 @@
+.page { padding-bottom: 60rpx; }
+.between { justify-content: space-between; }
+
+.hero {
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  color: #fff;
+  padding: 36rpx 32rpx 40rpx;
+}
+.hero-title { font-size: 40rpx; font-weight: 700; }
+.hero-sub { font-size: 24rpx; opacity: 0.85; margin-top: 8rpx; }
+.stats { margin-top: 24rpx; }
+.stat {
+  display: flex; flex-direction: column;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 16rpx; padding: 12rpx 28rpx; margin-right: 20rpx;
+}
+.stat-num { font-size: 40rpx; font-weight: 700; }
+.stat-label { font-size: 22rpx; opacity: 0.85; }
+
+.picker-line {
+  display: flex; align-items: center;
+  padding: 20rpx 0; border-bottom: 1rpx solid #e2e8f0;
+  font-size: 26rpx; color: #475569;
+}
+.picker-value { color: #0f172a; font-weight: 500; flex: 1; }
+.arrow { color: #94a3b8; padding: 0 8rpx; }
+
+.btn-mini { height: 56rpx; line-height: 56rpx; padding: 0 20rpx; font-size: 24rpx; margin: 6rpx 0 6rpx 12rpx; }
+.btn-block { display: flex; width: 100% !important; margin: 24rpx 0 8rpx; height: 84rpx; line-height: 84rpx; font-size: 30rpx; }
+
+.paste-box { margin-top: 16rpx; }
+.paste-area {
+  width: 100%; height: 300rpx; box-sizing: border-box;
+  background: #f8fafc; border: 1rpx solid #e2e8f0; border-radius: 12rpx;
+  padding: 16rpx; font-size: 24rpx; font-family: Menlo, monospace;
+}
+.notice {
+  margin-top: 16rpx; padding: 16rpx 20rpx; border-radius: 12rpx;
+  background: #ecfdf5; color: #047857; font-size: 24rpx;
+}
+
+.seg { background: #f1f5f9; border-radius: 12rpx; padding: 4rpx; }
+.seg-item { padding: 8rpx 24rpx; font-size: 24rpx; color: #64748b; border-radius: 10rpx; }
+.seg-on { background: #fff; color: #1d4ed8; font-weight: 600; box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.08); }
+
+.empty { text-align: center; padding: 60rpx 0; color: #334155; }
+
+.search {
+  margin-top: 16rpx; background: #f1f5f9; border-radius: 14rpx; padding: 0 20rpx; height: 72rpx;
+}
+.search-input { flex: 1; font-size: 26rpx; height: 72rpx; }
+.search-clear { color: #94a3b8; padding: 0 8rpx; }
+.toolbar { margin: 12rpx 0; }
+
+.checkbox {
+  width: 36rpx; height: 36rpx; border-radius: 8rpx; border: 2rpx solid #cbd5e1;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 22rpx; margin-right: 14rpx; flex-shrink: 0;
+}
+.checkbox-on { background: #2563eb; border-color: #2563eb; }
+.checkbox-sm { width: 30rpx; height: 30rpx; margin: 0; }
+
+.contact { border-top: 1rpx solid #f1f5f9; padding: 18rpx 0; }
+.contact-open { background: #f8fafc; margin: 0 -28rpx; padding: 18rpx 28rpx; }
+.contact-head { align-items: center; }
+.avatar {
+  width: 72rpx; height: 72rpx; border-radius: 50%;
+  background: #dbeafe; color: #1d4ed8; font-weight: 700; font-size: 30rpx;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 18rpx;
+}
+.contact-main { flex: 1; min-width: 0; }
+.contact-name { font-size: 30rpx; font-weight: 600; }
+.ellipsis { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.detail { margin: 12rpx 0 0 124rpx; }
+.kv { display: flex; padding: 6rpx 0; font-size: 26rpx; }
+.k { width: 150rpx; color: #94a3b8; flex-shrink: 0; }
+.v { flex: 1; word-break: break-all; color: #1e293b; }
+.link { color: #2563eb; }
+.tag { background: #eef2ff; color: #4338ca; font-size: 22rpx; padding: 2rpx 14rpx; border-radius: 20rpx; margin: 0 10rpx 8rpx 0; }
+.actions { margin-top: 10rpx; margin-left: -12rpx; }
+
+.table-scroll { width: 100%; white-space: nowrap; margin-top: 8rpx; }
+.table { display: inline-block; border: 1rpx solid #e2e8f0; border-radius: 8rpx; }
+.tr { display: flex; border-bottom: 1rpx solid #e2e8f0; }
+.th { background: #f8fafc; font-weight: 600; color: #334155; }
+.td {
+  width: 220rpx; flex-shrink: 0; padding: 14rpx 16rpx; font-size: 24rpx;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box;
+  border-right: 1rpx solid #f1f5f9;
+}
+.td-check { width: 70rpx; display: flex; align-items: center; justify-content: center; }
+
+.more { text-align: center; color: #2563eb; font-size: 24rpx; padding: 20rpx 0; }
+
+.export-box {
+  margin-top: 20rpx; padding: 20rpx; border-radius: 14rpx;
+  background: #eff6ff; border: 1rpx dashed #93c5fd;
+}
+.export-name { font-weight: 600; word-break: break-all; margin-bottom: 4rpx; }
+.tips { margin-top: 24rpx; }
+.tips view { margin-bottom: 6rpx; }
+.footer { text-align: center; padding: 20rpx 0; }

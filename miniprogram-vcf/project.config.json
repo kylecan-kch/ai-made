@@ -1,0 +1,40 @@
+{
+  "description": "VCF 通讯录 ↔ 表格 (CSV / Excel) 互转小程序，移植自 kylecan-kch/ai-made",
+  "appid": "touristappid",
+  "projectname": "miniprogram-vcf",
+  "compileType": "miniprogram",
+  "libVersion": "2.32.3",
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "tests" },
+      { "type": "file", "value": "README.md" },
+      { "type": "file", "value": "utils/xlsx.LICENSE.txt" }
+    ],
+    "include": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "minifyWXML": true,
+    "minifyWXSS": true,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true,
+    "ignoreUploadUnusedFiles": true,
+    "babelSetting": {
+      "ignore": [
+        "utils/xlsx.mini.min.js",
+        "utils/cp936.js"
+      ],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "condition": {},
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  }
+}

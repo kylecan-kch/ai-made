@@ -69,7 +69,7 @@ async function buildOfflineHtml() {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>阚哥不求人转换器 - 通讯录提取转换 (离线独立版)</title>
-    <meta name="description" content="再也不用在傻逼咸鱼上花钱买了" />
+    <meta name="description" content="免费好用，无需额外付费" />
     <style>
 /* Reset & Tailwind styles */
 ${cssContent}

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { X, Users, AlertTriangle, ArrowRight, Merge, CheckCircle2 } from 'lucide-react';
-import { Contact, PhoneEntry, EmailEntry } from '../types/contact';
+import { Contact } from '../types/contact';
+import { findDuplicateGroups, mergeAllDuplicates } from '../utils/dedupe';
 
 interface DeduplicateModalProps {
   contacts: Contact[];
@@ -9,146 +10,19 @@ interface DeduplicateModalProps {
   onApplyMerged: (mergedContacts: Contact[]) => void;
 }
 
-interface DuplicateGroup {
-  reason: 'phone' | 'name';
-  identifier: string;
-  items: Contact[];
-}
-
 export const DeduplicateModal: React.FC<DeduplicateModalProps> = ({
   contacts,
   isOpen,
   onClose,
   onApplyMerged,
 }) => {
-  // Find duplicate groups
-  const duplicateGroups = useMemo(() => {
-    const phoneMap = new Map<string, Contact[]>();
-    const nameMap = new Map<string, Contact[]>();
-
-    contacts.forEach(c => {
-      // Group by normalized phone
-      c.phones.forEach(p => {
-        const clean = p.number.replace(/\D/g, '');
-        if (clean.length >= 7) {
-          const list = phoneMap.get(clean) || [];
-          list.push(c);
-          phoneMap.set(clean, list);
-        }
-      });
-
-      // Group by exact full name
-      const cleanName = c.fullName.trim().toLowerCase();
-      if (cleanName && cleanName !== '未命名' && cleanName !== '未命名联系人') {
-        const list = nameMap.get(cleanName) || [];
-        list.push(c);
-        nameMap.set(cleanName, list);
-      }
-    });
-
-    const groups: DuplicateGroup[] = [];
-    const seenContactPairs = new Set<string>();
-
-    // Phone duplicates
-    phoneMap.forEach((items, phone) => {
-      const unique = Array.from(new Set(items));
-      if (unique.length > 1) {
-        const key = unique.map(u => u.id).sort().join(',');
-        if (!seenContactPairs.has(key)) {
-          seenContactPairs.add(key);
-          groups.push({
-            reason: 'phone',
-            identifier: `电话一致 (${phone})`,
-            items: unique,
-          });
-        }
-      }
-    });
-
-    // Name duplicates
-    nameMap.forEach((items, name) => {
-      const unique = Array.from(new Set(items));
-      if (unique.length > 1) {
-        const key = unique.map(u => u.id).sort().join(',');
-        if (!seenContactPairs.has(key)) {
-          seenContactPairs.add(key);
-          groups.push({
-            reason: 'name',
-            identifier: `姓名一致 (${items[0].fullName})`,
-            items: unique,
-          });
-        }
-      }
-    });
-
-    return groups;
-  }, [contacts]);
+  // Find duplicate groups (connected components over shared phone / exact name)
+  const duplicateGroups = useMemo(() => findDuplicateGroups(contacts), [contacts]);
 
   if (!isOpen) return null;
 
   const handleMergeAll = () => {
-    // Merge logic: Combine duplicate records
-    const processedIds = new Set<string>();
-    const finalContacts: Contact[] = [];
-
-    // Helper to merge list of contacts into one
-    const mergeContactList = (list: Contact[]): Contact => {
-      const base = { ...list[0] };
-      const allPhones: PhoneEntry[] = [];
-      const allEmails: EmailEntry[] = [];
-      const allCategories = new Set<string>();
-      const notes: string[] = [];
-
-      list.forEach(c => {
-        // Phones
-        c.phones.forEach(p => {
-          if (!allPhones.some(existing => existing.number === p.number)) {
-            allPhones.push(p);
-          }
-        });
-        // Emails
-        c.emails.forEach(e => {
-          if (!allEmails.some(existing => existing.address.toLowerCase() === e.address.toLowerCase())) {
-            allEmails.push(e);
-          }
-        });
-        // Categories
-        c.categories.forEach(cat => allCategories.add(cat));
-        // Notes
-        if (c.notes && !notes.includes(c.notes)) {
-          notes.push(c.notes);
-        }
-        // Organization / Title fallback
-        if (!base.organization && c.organization) base.organization = c.organization;
-        if (!base.department && c.department) base.department = c.department;
-        if (!base.jobTitle && c.jobTitle) base.jobTitle = c.jobTitle;
-        if (!base.address.street && c.address.street) base.address = c.address;
-        if (!base.birthday && c.birthday) base.birthday = c.birthday;
-        if (!base.website && c.website) base.website = c.website;
-      });
-
-      base.phones = allPhones;
-      base.emails = allEmails;
-      base.categories = Array.from(allCategories);
-      base.notes = notes.join('；');
-
-      return base;
-    };
-
-    duplicateGroups.forEach(grp => {
-      const merged = mergeContactList(grp.items);
-      finalContacts.push(merged);
-      grp.items.forEach(c => processedIds.add(c.id));
-    });
-
-    // Add remaining un-duplicated contacts
-    contacts.forEach(c => {
-      if (!processedIds.has(c.id)) {
-        finalContacts.push(c);
-      }
-    });
-
-    onApplyMerged(finalContacts);
+    onApplyMerged(mergeAllDuplicates(contacts, duplicateGroups));
     onClose();
   };
 
