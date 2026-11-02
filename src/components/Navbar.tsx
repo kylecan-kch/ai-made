@@ -40,7 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                再也不用在傻逼咸鱼上花钱买了
+                免费好用，无需额外付费
               </p>
             </div>
           </div>

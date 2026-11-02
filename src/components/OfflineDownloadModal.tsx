@@ -91,7 +91,7 @@ export const OfflineDownloadModal: React.FC<OfflineDownloadModalProps> = ({
               </div>
               <div className="flex items-center gap-1.5 bg-white/80 p-2 rounded-lg border border-emerald-200/60">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>永久免费使用，拒绝咸鱼割韭菜</span>
+                <span>永久免费使用，无需额外付费</span>
               </div>
               <div className="flex items-center gap-1.5 bg-white/80 p-2 rounded-lg border border-emerald-200/60">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
