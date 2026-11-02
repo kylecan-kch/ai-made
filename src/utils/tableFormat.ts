@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { Contact, Format1Row, PhoneEntry, EmailEntry } from '../types/contact';
 import { generateId, splitFullName, normalizePhone } from './vcard';
+import { decodeTextBuffer } from './encoding';
 
 /**
  * Standard Format 1 Table Columns ordered logically
@@ -43,7 +44,8 @@ export function contactsToFormat1Rows(contacts: Contact[]): Format1Row[] {
       '名字': c.givenName || '',
       '主要电话': primaryPhone?.number || '',
       '电话类型1': primaryPhone ? (primaryPhone.type === 'CELL' ? '手机' : primaryPhone.type === 'WORK' ? '工作' : primaryPhone.type === 'HOME' ? '住宅' : '其他') : '',
-      '备用电话': secondaryPhone?.number || (c.phones.length > 2 ? c.phones.slice(1).map(p => p.number).join(';') : ''),
+      // All phones after the first go into 备用电话 (";"-separated); previously the 3rd+ numbers were dropped
+      '备用电话': c.phones.slice(1).map(p => p.number).filter(Boolean).join(';'),
       '电话类型2': secondaryPhone ? (secondaryPhone.type === 'CELL' ? '手机' : secondaryPhone.type === 'WORK' ? '工作' : secondaryPhone.type === 'HOME' ? '住宅' : '其他') : '',
       '电子邮箱': c.emails.map(e => e.address).join('; ') || '',
       '公司/组织': c.organization || '',
@@ -71,20 +73,44 @@ function normalizeKey(key: string): string {
   return key.trim().toLowerCase().replace(/[\s_\-/\\()（）]/g, '');
 }
 
+const normalizedKeyCache = new Map<string, string>();
+function cachedNormalizeKey(key: string): string {
+  let n = normalizedKeyCache.get(key);
+  if (n === undefined) {
+    n = normalizeKey(key);
+    if (normalizedKeyCache.size < 10000) normalizedKeyCache.set(key, n);
+  }
+  return n;
+}
+
+/**
+ * Undo the CSV formula-injection guard added on export ("'=..." -> "=...")
+ */
+function unguardCell(val: string): string {
+  return /^'[=+\-@\t\r]/.test(val) ? val.substring(1) : val;
+}
+
 /**
  * Convert arbitrary or Format 1 table rows to Contact objects
  */
 export function format1RowsToContacts(rawRows: Record<string, any>[]): Contact[] {
   return rawRows.map(row => {
     // Find matching keys dynamically
+    // Build the normalized-header lookup once per row (was O(aliases x columns) regex work per field)
+    const lookup = new Map<string, string>();
+    for (const rowKey in row) {
+      const val = row[rowKey];
+      if (val === undefined || val === null) continue;
+      const str = unguardCell(String(val).trim());
+      if (!str) continue;
+      const nk = cachedNormalizeKey(rowKey);
+      if (!lookup.has(nk)) lookup.set(nk, str);
+    }
     const getVal = (possibleKeys: string[]): string => {
       for (const k of possibleKeys) {
-        const normK = normalizeKey(k);
-        for (const [rowKey, val] of Object.entries(row)) {
-          if (normalizeKey(rowKey) === normK && val !== undefined && val !== null) {
-            return String(val).trim();
-          }
-        }
+        // Empty cells no longer shadow a later alias column (e.g. empty 手机 + filled 电话)
+        const v = lookup.get(cachedNormalizeKey(k));
+        if (v) return v;
       }
       return '';
     };
@@ -214,12 +240,34 @@ export function exportContactsToExcel(contacts: Contact[], fileName = '联系人
 }
 
 /**
+ * Guard against CSV / formula injection (=, +, -, @, TAB, CR prefixes) when the CSV is opened in Excel/WPS.
+ * Plain phone numbers such as "+8613800138000" or "-" are left untouched so they stay usable.
+ */
+export function guardCsvCell(val: string): string {
+  if (!val) return val;
+  if (/^[=@\t\r]/.test(val)) return "'" + val;
+  if (/^[+-]/.test(val) && !/^[+-]?[\d\s().-]*$/.test(val)) return "'" + val;
+  return val;
+}
+
+/**
+ * Build Format 1 CSV text (without BOM)
+ */
+export function contactsToCsvString(contacts: Contact[]): string {
+  const rows = contactsToFormat1Rows(contacts).map(r => {
+    const guarded: Record<string, string> = {};
+    for (const col of FORMAT1_COLUMNS) guarded[col] = guardCsvCell((r as Record<string, string>)[col] || '');
+    return guarded;
+  });
+  const worksheet = XLSX.utils.json_to_sheet(rows, { header: [...FORMAT1_COLUMNS] });
+  return XLSX.utils.sheet_to_csv(worksheet);
+}
+
+/**
  * Export contacts to CSV file
  */
 export function exportContactsToCsv(contacts: Contact[], fileName = '联系人数据_格式1.csv') {
-  const rows = contactsToFormat1Rows(contacts);
-  const worksheet = XLSX.utils.json_to_sheet(rows, { header: [...FORMAT1_COLUMNS] });
-  const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+  const csvOutput = contactsToCsvString(contacts);
 
   // Add BOM for proper Chinese characters in Excel CSV
   const blob = new Blob(['\uFEFF' + csvOutput], { type: 'text/csv;charset=utf-8;' });
@@ -231,17 +279,65 @@ export function exportContactsToCsv(contacts: Contact[], fileName = '联系人�
   URL.revokeObjectURL(url);
 }
 
+function isBinarySpreadsheet(bytes: Uint8Array): boolean {
+  // XLSX / ODS (zip: "PK\x03\x04") or legacy XLS (OLE2: D0 CF 11 E0)
+  if (bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) return true;
+  if (bytes.length >= 4 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) return true;
+  return false;
+}
+
+/** Excel serial date -> yyyy-mm-dd (1900 date system) */
+function excelSerialToDate(serial: number): string {
+  const ms = Math.round((Math.floor(serial) - 25569) * 86400 * 1000);
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return String(serial);
+  return d.toISOString().slice(0, 10);
+}
+
+function isDateFormat(fmt?: string): boolean {
+  if (!fmt || /^general$/i.test(fmt)) return false;
+  const stripped = fmt.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '').replace(/\\./g, '');
+  return /[yd]/i.test(stripped);
+}
+
+/** Replace numeric date cells by yyyy-mm-dd text so 生日 does not become "32888" */
+function normalizeDateCells(ws: XLSX.WorkSheet) {
+  for (const addr in ws) {
+    if (addr[0] === '!') continue;
+    const cell = ws[addr] as XLSX.CellObject;
+    if (cell && cell.t === 'n' && typeof cell.v === 'number' && isDateFormat(cell.z as string | undefined)) {
+      cell.v = excelSerialToDate(cell.v);
+      cell.t = 's';
+      delete cell.w;
+    }
+  }
+}
+
 /**
  * Read Excel or CSV file from ArrayBuffer
  */
 export function parseSpreadsheetBuffer(buffer: ArrayBuffer): Contact[] {
-  const workbook = XLSX.read(buffer, { type: 'array' });
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) return [];
-  
-  const worksheet = workbook.Sheets[firstSheetName];
-  const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
-  return format1RowsToContacts(rawRows);
+  const bytes = new Uint8Array(buffer);
+  let workbook: XLSX.WorkBook;
+  if (isBinarySpreadsheet(bytes)) {
+    workbook = XLSX.read(bytes, { type: 'array', cellNF: true });
+  } else {
+    // CSV / TSV text: detect UTF-8 (with or without BOM) / GBK / UTF-16 ourselves; SheetJS treats BOM-less
+    // bytes as Latin-1, which turned every Chinese header into mojibake and imported 0 contacts.
+    // raw: true keeps cell text verbatim (leading zeros, "+86", "1e5" are not coerced into numbers).
+    workbook = XLSX.read(decodeTextBuffer(bytes), { type: 'string', raw: true });
+  }
+
+  // Use the first sheet that actually yields contacts (e.g. skip an "说明" cover sheet)
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
+    normalizeDateCells(worksheet);
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+    const contacts = format1RowsToContacts(rawRows);
+    if (contacts.length > 0) return contacts;
+  }
+  return [];
 }
 
 /**
