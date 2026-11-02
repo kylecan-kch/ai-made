@@ -12,9 +12,9 @@ const vm = require('vm');
 const ROOT = path.join(__dirname, '..');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'mp-vcf-'));
 
-function createEnv() {
+function createEnv(initialStorage) {
   const calls = { toast: [], modal: [], share: [], open: [], clipboard: [], addContact: [] };
-  const storage = {};
+  const storage = Object.assign({}, initialStorage);
   let modalAnswer = true;
   const fsm = {
     readFile({ filePath, success, fail }) {
@@ -35,6 +35,8 @@ function createEnv() {
     getFileSystemManager: () => fsm,
     getStorageSync: k => storage[k],
     setStorageSync: (k, v) => { storage[k] = JSON.parse(JSON.stringify(v)); },
+    removeStorageSync: k => { delete storage[k]; },
+    getStorageInfoSync: () => ({ keys: Object.keys(storage), currentSize: Math.ceil(JSON.stringify(storage).length / 1024), limitSize: 10240 }),
     showToast: o => calls.toast.push(o.title),
     showLoading() {}, hideLoading() {},
     showModal: o => { calls.modal.push(o); o.success && o.success({ confirm: modalAnswer }); },
@@ -226,8 +228,13 @@ test('勾选只增量 setData 被点的那一项；导入时丢弃 PHOTO 以免�
   env.nextFile = { path: f, name: 'photos.vcf', size: 100 };
   page.chooseFile();
   assert.equal(page.data.total, 250);
-  assert.ok(storage.k.every(c => !c.photo), '缓存中不应包含 photo');
-  assert.ok(JSON.stringify(storage.k).length < 100 * 1024);
+  // 分片缓存：meta + chunk（见 utils/storage.js）
+  const meta = storage.vcf_contacts_v2_meta;
+  assert.equal(meta.count, 250);
+  const cached = [].concat(...meta.chunkKeys.map(k => storage[k]));
+  assert.equal(cached.length, 250);
+  assert.ok(cached.every(c => !c.photo), '缓存中不应包含 photo');
+  assert.ok(JSON.stringify(cached).length < 100 * 1024);
 
   page.loadMore();
   assert.equal(page.data.list.length, 200);
@@ -251,4 +258,45 @@ test('勾选只增量 setData 被点的那一项；导入时丢弃 PHOTO 以免�
   page.toggleSelectAll();
   assert.equal(page.data.allSelected, true);
   assert.equal(page.data.selectedCount, 250);
+});
+
+test('.xls：文件选择器不再接受；改后缀或误选的旧版 Excel 给出“另存为 .xlsx”的友好提示', () => {
+  const env = createEnv();
+  const { page, calls } = env;
+  let picked;
+  const realChoose = env.page.chooseFile;
+  // 检查传给 wx.chooseMessageFile 的扩展名
+  const src = fs.readFileSync(path.join(ROOT, 'pages/index/index.js'), 'utf8');
+  const m = /extension:\s*\[([^\]]*)\]/.exec(src);
+  picked = m[1];
+  assert.ok(!/'xls'/.test(picked), '选择器不应包含 xls');
+  assert.ok(/'xlsx'/.test(picked));
+  const wxml = fs.readFileSync(path.join(ROOT, 'pages/index/index.wxml'), 'utf8');
+  assert.ok(!/\.xls(?!x)/.test(wxml));
+
+  // 真正的 OLE 头（D0 CF 11 E0 A1 B1 1A E1）
+  const ole = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(504)]);
+  for (const name of ['老表格.xls', '改了后缀.xlsx', '其实是xls.csv']) {
+    const f = path.join(TMP, 'legacy-' + calls.modal.length + '.bin');
+    fs.writeFileSync(f, ole);
+    env.nextFile = { path: f, name, size: ole.length };
+    realChoose.call(page);
+    const last = calls.modal[calls.modal.length - 1];
+    assert.match(last.title, /不支持 \.xls/, name);
+    assert.match(last.content, /另存为.*\.xlsx/);
+    assert.ok(!/parse_xlscfb/.test(last.content));
+  }
+  assert.equal(page.data.total, 0);
+});
+
+test('本地缓存：旧版单 key 在打开页面时迁移为分片并删除旧 key；重新打开能读回', () => {
+  const legacy = [];
+  for (let i = 0; i < 3000; i++) legacy.push({ id: 'L' + i, fullName: '旧' + i, familyName: '旧', givenName: String(i), phones: [{ number: '1380000' + String(i).padStart(4, '0'), type: 'CELL' }], emails: [], organization: '', department: '', jobTitle: '', address: { street: '', city: '', region: '', postalCode: '', country: '', fullAddress: '' }, notes: '', birthday: '', website: '', categories: [] });
+  const env = createEnv({ k: legacy });
+  assert.equal(env.page.data.total, 3000);
+  assert.equal(env.storage.k, undefined, '旧 key 应被删除');
+  assert.equal(env.storage.vcf_contacts_v2_meta.count, 3000);
+  const env2 = createEnv(env.storage);
+  assert.equal(env2.page.data.total, 3000);
+  assert.deepEqual(JSON.parse(JSON.stringify(env2.page.contacts)), legacy);
 });

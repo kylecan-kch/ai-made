@@ -2,6 +2,7 @@ var vcard = require('../../utils/vcard.js');
 var table = require('../../utils/table.js');
 var dedupe = require('../../utils/dedupe.js');
 var encoding = require('../../utils/encoding.js');
+var storage = require('../../utils/storage.js');
 
 var app = getApp();
 var PAGE_SIZE = 100;
@@ -25,6 +26,18 @@ function errMsg(err) {
 function getExt(name) {
   var m = /\.([a-zA-Z0-9]+)$/.exec(name || '');
   return m ? m[1].toLowerCase() : '';
+}
+
+var XLS_TIP = '暂不支持旧版 Excel（.xls）文件。请用 Excel / WPS 打开后“另存为” .xlsx 格式（或 CSV），再导入另存后的文件。';
+
+/** 旧版 .xls 是 OLE 复合文档，文件头为 D0 CF 11 E0 A1 B1 1A E1（用于识别改了后缀的 .xls） */
+function isLegacyXls(buffer) {
+  try {
+    var b = new Uint8Array(buffer, 0, Math.min(8, buffer.byteLength || 0));
+    return b.length >= 4 && b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0;
+  } catch (e) {
+    return false;
+  }
 }
 
 function dateStamp() {
@@ -72,9 +85,12 @@ Page({
     this.contacts = [];
     this.selected = {};
     this.shown = PAGE_SIZE;
+    // 分片缓存（单 key ≤1MB、总量 ≤10MB），首次会把旧版单 key 缓存迁移过来
+    this.store = storage.createContactStore(wx, { prefix: 'vcf_contacts_v2', legacyKey: app.globalData.storageKey });
     try {
-      var saved = wx.getStorageSync(app.globalData.storageKey);
-      if (saved && saved.length) this.contacts = saved;
+      var loaded = this.store.load();
+      this.contacts = loaded.contacts || [];
+      if (loaded.source === 'corrupt') toast('本地缓存已损坏，已清理，请重新导入');
     } catch (e) { /* ignore */ }
     this.refresh();
   },
@@ -86,11 +102,18 @@ Page({
   /* ---------------- 数据与视图 ---------------- */
 
   persist: function () {
+    var res;
     try {
-      wx.setStorageSync(app.globalData.storageKey, this.contacts);
+      res = this.store.save(this.contacts);
     } catch (e) {
-      toast('联系人较多，本地缓存失败（不影响本次使用）');
+      res = { ok: false };
     }
+    if (!res.ok) {
+      toast('联系人过多，超出小程序本地缓存上限（10MB），本次可正常使用，但下次打开需重新导入');
+    } else if (res.photosDropped) {
+      toast('本地缓存空间不足，已省略 ' + res.photosDropped + ' 张头像照片（其余信息已保存）');
+    }
+    return res;
   },
 
   getFiltered: function () {
@@ -184,7 +207,7 @@ Page({
     wx.chooseMessageFile({
       count: 1,
       type: 'file',
-      extension: ['vcf', 'vcard', 'csv', 'xlsx', 'xls', 'txt'],
+      extension: ['vcf', 'vcard', 'csv', 'xlsx', 'txt'],
       success: function (res) {
         var f = res.tempFiles && res.tempFiles[0];
         if (!f) return;
@@ -212,7 +235,13 @@ Page({
           var buffer = res.data; // 不传 encoding 时为 ArrayBuffer
           var parsed;
           var encName = '';
-          if (ext === 'xlsx' || ext === 'xls') {
+          if (ext === 'xls' || isLegacyXls(buffer)) {
+            // 旧版 Excel 97-2003 (.xls) 不支持（内置 SheetJS 精简版不含该解析器）
+            wx.hideLoading();
+            wx.showModal({ title: '暂不支持 .xls', content: XLS_TIP, showCancel: false });
+            return;
+          }
+          if (ext === 'xlsx') {
             parsed = table.parseSpreadsheetBuffer(buffer);
           } else {
             var decoded = encoding.decodeAuto(buffer);
