@@ -1,0 +1,100 @@
+# VCF 通讯录 ↔ 表格互转 · 微信小程序
+
+由 [kylecan-kch/ai-made](https://github.com/kylecan-kch/ai-made)（React + Vite 网页版）移植而来的**原生微信小程序**（纯 JS，无需 npm 构建）。
+核心转换逻辑（`src/utils/vcard.ts`、`src/utils/tableFormat.ts`、`DeduplicateModal.tsx` 中的查重合并）已逐函数移植到 `utils/`，并去掉了全部浏览器依赖（DOM / FileReader / Blob / TextDecoder）。
+
+## 一、导入微信开发者工具
+
+1. 下载并安装 [微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)（稳定版即可）。
+2. 解压 `miniprogram-vcf.zip`，得到 `miniprogram-vcf/` 文件夹。
+3. 打开开发者工具 → **小程序** → 左上 **“+” / 导入项目**。
+4. **目录**：选择解压后的 `miniprogram-vcf` 文件夹（里面直接有 `app.json` 的那一层）。
+5. **AppID**：
+   - 只想本地体验：选择 **“测试号”**（或保持 `touristappid` 游客模式）；
+   - 要真机预览/上传发布：填写你自己在 [mp.weixin.qq.com](https://mp.weixin.qq.com) 注册的小程序 AppID（也可以之后在 `project.config.json` 里改 `appid`）。
+6. 后端服务选 **“不使用云服务”**，点击 **导入**，即可在模拟器中看到页面。
+7. 首次打开如果提示“基础库版本”，选择一个 ≥ 2.16.0 的版本即可（右上角“详情 → 本地设置 → 调试基础库”）。
+
+> 无需 `npm install`、无需“构建 npm”。Excel 解析库已内置在 `utils/xlsx.mini.min.js`。
+
+## 二、功能
+
+| 功能 | 说明 |
+| --- | --- |
+| 选择文件导入 | `wx.chooseMessageFile` 从聊天记录选择 `.vcf / .vcard / .csv / .xlsx / .xls / .txt` |
+| 编码自动识别 | UTF-8、UTF-8 BOM、UTF-16、**GBK**（老安卓/老 Excel 导出的中文 CSV 也不乱码） |
+| vCard 解析 | 2.1 / 3.0 / 4.0；Quoted-Printable（含跨行软换行）；`CHARSET=UTF-8/GBK`；多个 TEL/EMAIL；ORG;部门；ADR；NOTE；BDAY；URL；CATEGORIES；PHOTO；iOS `item1.TEL` 分组前缀 |
+| 中文姓名 | 只有全名时自动拆分姓/名，支持 40 个复姓（欧阳、诸葛、司马…） |
+| 表格识别 | 标准“格式1” 20 列，且兼容各种中英文表头别名（姓名/联系人/name、手机/电话/mobile、公司/单位/company…） |
+| 粘贴导入 | 直接粘贴 VCF 文本或 CSV 文本，也可一键读取剪贴板 |
+| 导入方式 | 替换现有 / 追加到现有 |
+| 预览 | 列表视图（点开看详情、点号码拨号）与“格式1”表格视图（横向滚动）；搜索姓名/号码/公司/邮箱/标签；超过 100 条分页加载 |
+| 整理 | 勾选 / 全选、删除、清空、**查重合并**（号码或姓名相同 → 合并号码、邮箱、标签、备注） |
+| 单个联系人 | **存入手机通讯录**（`wx.addPhoneContact`）、复制 vCard |
+| 导出 VCF | vCard 3.0 / 2.1 / 4.0，UTF-8 或 Quoted-Printable（2.1） |
+| 导出表格 | CSV（带 UTF-8 BOM，Excel 打开不乱码）、Excel `.xlsx`（与原版相同的列宽与工作表名） |
+| 导出范围 | 全部 / 仅已勾选 |
+| 发送与打开 | `wx.shareFileMessage` 发给好友或“文件传输助手”；xlsx 可 `wx.openDocument` 预览；VCF/CSV 可复制文本 |
+| 标准模板 | 一键生成带示例数据的“格式1”标准 Excel 模板 |
+| 本地缓存 | 联系人保存在小程序本地存储，下次打开仍在；数据不上传任何服务器 |
+
+## 三、目录结构
+
+```
+miniprogram-vcf/
+├── app.js / app.json / app.wxss
+├── project.config.json      # appid: touristappid，tests/ 与 README 已在 packOptions 中排除
+├── sitemap.json
+├── pages/index/             # 主页面：导入 → 预览整理 → 导出
+│   ├── index.js / index.json / index.wxml / index.wxss
+├── utils/
+│   ├── vcard.js             # ← vcard.ts：parseVCard / generateVCard / QP 编解码 / 拆分姓名
+│   ├── table.js             # ← tableFormat.ts：格式1 列、行↔联系人、CSV 读写、xlsx 读写、演示数据
+│   ├── dedupe.js            # ← DeduplicateModal.tsx 的查重/合并逻辑
+│   ├── encoding.js          # 纯 JS 的 UTF-8 编解码、GBK 解码、编码自动识别（替代 TextDecoder）
+│   ├── cp936.js             # GBK 码表（codepage，Apache-2.0）
+│   ├── xlsx.mini.min.js     # SheetJS 0.18.5 精简版（Apache-2.0）
+│   └── xlsx.LICENSE.txt
+└── tests/                   # Node 测试（不会被打包进小程序）
+    ├── utils.test.js        # 工具函数测试（在“无 Buffer/TextDecoder/DOM”的沙箱中运行）
+    ├── page.smoke.test.js   # 用模拟 wx 跑通页面完整流程
+    ├── validate.test.js     # JSON、页面文件、WXML 闭合、事件函数、禁用 API、包体积校验
+    └── sandbox.js
+```
+
+运行测试（需要 Node 18+）：
+
+```bash
+cd miniprogram-vcf
+node --test tests/*.test.js
+```
+
+## 四、在手机上把 VCF 导入通讯录
+
+小程序无法直接批量写入系统通讯录（微信只开放了单个联系人的 `wx.addPhoneContact`）。批量导入的做法：
+
+1. 导出格式选 **VCF**，点“生成文件” → “发送给好友 / 文件传输助手”；
+2. 在手机微信里打开该文件 → 右上角 **“用其他应用打开”** → 选择“通讯录 / 联系人”即可批量导入；
+3. 安卓老机型若中文乱码，导出时选 **vCard 2.1 + Quoted-Printable**。
+
+## 五、限制与说明
+
+- **`wx.chooseMessageFile` 只能从微信聊天记录中选文件**，不能直接浏览手机文件管理器。请先把文件发到“文件传输助手”。
+- **`wx.shareFileMessage`（发送文件）需要基础库 ≥ 2.16.0**，在开发者工具模拟器里可能无法真正弹出会话选择，请用 **“预览”扫码或“真机调试”** 测试；`wx.chooseMessageFile` 在模拟器中会弹出电脑的文件选择框，可以正常测试导入。
+- `wx.addPhoneContact` 在模拟器中只会打印调用，需真机测试；一次只能添加一个联系人。
+- `wx.openDocument` 只支持 doc/xls/xlsx/ppt/pdf 等，所以只有 xlsx 显示“打开预览”；VCF/CSV 请发送或复制。
+- 导出文件写在 `wx.env.USER_DATA_PATH`（小程序本地用户目录，上限约 200MB）；每次导出会自动清理上一次的导出文件。
+- 本地缓存上限约 10MB（大约几万条联系人），超出时会提示但不影响当次使用。
+- 导出的文件编码均为 UTF-8；不提供 GBK 编码导出（GBK 仅用于读取）。
+- 联系人照片（PHOTO）会被解析保留，但不在列表中显示，也不写入导出的 VCF/表格（与原版一致）。
+- 与原网页版相比**未移植**：联系人编辑抽屉（逐字段编辑/新建）、离线 HTML 打包下载、分组标签筛选面板、AI(Gemini) 相关依赖。这些不属于核心转换功能，可后续按需加。
+- 正式发布到微信时，“联系人/通讯录”类小程序可能需要在后台补充用户隐私保护指引（涉及 `addPhoneContact`、剪贴板、选择文件等接口）。
+
+## 六、相对原版的修复与增强
+
+- Quoted-Printable 的跨行软换行（行尾 `=`）现在能正确拼接；
+- 支持 iOS 导出的 `item1.TEL`、`item2.EMAIL` 分组前缀（原版会忽略这些号码/邮箱）；
+- `TYPE=CELL;TYPE=VOICE` 这类重复参数会合并而不是覆盖；
+- 超过 2 个电话号码时，表格“备用电话”列保留第 3 个及以后的号码（原版会丢失）；
+- 查重合并按连通分量合并，避免同一联系人同时“号码重复”和“姓名重复”时被合并出两份；
+- 读取文件时自动识别 GBK/UTF-16 编码。
