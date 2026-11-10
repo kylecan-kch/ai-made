@@ -1,5 +1,6 @@
 {
   "private": true,
+  "version": "1.0.5",
   "type": "commonjs",
   "description": "声明本目录为 CommonJS，使仓库根目录 type=module 时 node --test 仍能运行 tests/*.test.js。微信小程序运行时不依赖此文件。"
 }
