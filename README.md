@@ -2,11 +2,14 @@
 
 **VCF Contacts Hub** · VCF 联系人 ⇄ 表格互转
 
-> 草稿：本文档根据 `1.0.1` 分支（`package.json` 版本 1.0.1，提交 `c2a295d`）的源码整理，所有功能描述均可在代码中找到对应实现。
+> 网页版版本 **1.0.1**（根目录 `package.json`）。仓库当前发布分支为 `ready-for-everything`。
+>
+> 同仓库还包含微信小程序版 **「不求人VCF工具」**，版本 **1.0.5**（见 [`miniprogram-vcf/package.json`](./miniprogram-vcf/package.json)）。两端版本号独立维护，请勿混用。小程序说明见 [`miniprogram-vcf/README.md`](./miniprogram-vcf/README.md)，更新记录见 [`miniprogram-vcf/CHANGELOG.md`](./miniprogram-vcf/CHANGELOG.md)。将小程序放在 `miniprogram-vcf/` 子目录的决策见 [docs/decisions/0001-miniprogram-in-subdirectory.md](docs/decisions/0001-miniprogram-in-subdirectory.md)。
 
 一个纯前端的通讯录转换工具：把 `.vcf / .vcard` 联系人文件解析成表格（“格式1”），也可以把 Excel / CSV 表格转回 `.vcf`。所有解析、编辑、导出都在浏览器本地完成，不上传任何数据。另外可以下载一个**单文件离线 HTML**，双击即可离线使用。
 
-- 项目名称：阚哥不求人转换器，英文名 VCF Contacts Hub（与 `metadata.json` 一致）
+- 项目名称（网页版）：阚哥不求人转换器，英文名 VCF Contacts Hub（与 `metadata.json` 一致）
+- 小程序产品名：「不求人VCF工具」
 - 详细的操作教程见 [docs/使用说明.md](docs/使用说明.md)
 
 ## 功能一览
@@ -142,8 +145,11 @@ npm run bench
 │       ├── offlinePackager.ts    # 下载离线单文件 HTML
 │       ├── vcard.test.ts         # 单元测试（node:test）
 │       └── review.test.ts        # 单元测试（node:test）
-├── miniprogram-vcf/              # 微信小程序版（说明见其中的 README.md）
-├── VCF表格互转离线封包版.html      # 早期提交的离线版（旧名称 “VCF Contacts Hub”）
+├── miniprogram-vcf/              # 微信小程序「不求人VCF工具」（版本 1.0.5，说明见其中的 README.md / CHANGELOG.md）
+├── docs/
+│   ├── 使用说明.md                # 网页版用户教程
+│   └── decisions/                # 决策记录
+├── VCF表格互转离线封包版.html      # 早期提交的离线版（旧名称 “VCF Contacts Hub”；文件名保持不动）
 ├── r12-search-phone-highlight.png # 截图：电话搜索高亮
 └── r13-standalone-html-working.png # 截图：离线版运行效果
 ```
@@ -219,6 +225,16 @@ npm run bench
 - 不支持 `.xls`，需要先另存为 `.xlsx` 或 CSV
 - 追加导入不会自动去重，需要手动点「查重合并」
 - 数据只保存在当前浏览器的 `localStorage`，换浏览器/清缓存后丢失
+
+## 微信小程序「不求人VCF工具」
+
+小程序版与网页版在同一仓库中维护，目录为 [`miniprogram-vcf/`](./miniprogram-vcf/)（原生微信小程序，纯 JS，无需 npm 构建）。
+
+- 产品名：「不求人VCF工具」
+- 当前版本：**1.0.5**（与网页版 **1.0.1** 不是同一个版本号）
+- 导入微信开发者工具时，请选择 `miniprogram-vcf/` 这一层（含 `app.json`），而不是仓库根目录
+
+详见 [miniprogram-vcf/README.md](./miniprogram-vcf/README.md)。
 
 ## 许可证
 
