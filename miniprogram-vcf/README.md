@@ -1,14 +1,19 @@
-# VCF 通讯录 ↔ 表格互转 · 微信小程序
+# 不求人VCF工具
 
-由 [kylecan-kch/ai-made](https://github.com/kylecan-kch/ai-made)（React + Vite 网页版）移植而来的**原生微信小程序**（纯 JS，无需 npm 构建）。
-核心转换逻辑（`src/utils/vcard.ts`、`src/utils/tableFormat.ts`、`DeduplicateModal.tsx` 中的查重合并）已逐函数移植到 `utils/`，并去掉了全部浏览器依赖（DOM / FileReader / Blob / TextDecoder）。
+微信小程序 · VCF 通讯录 ↔ 表格互转 · 版本 **1.0.5**
+
+由 [kylecan-kch/ai-made](https://github.com/kylecan-kch/ai-made) 网页版（「阚哥不求人转换器」，网页版版本 1.0.1）移植而来的**原生微信小程序**（纯 JS，无需 npm 构建）。产品名为「不求人VCF工具」。小程序与网页版的版本号独立维护，当前小程序版本见 [`package.json`](./package.json)，更新记录见 [CHANGELOG.md](./CHANGELOG.md)。
+
+核心转换逻辑（`src/utils/vcard.ts`、`src/utils/tableFormat.ts`、`src/utils/dedupe.ts` / `DeduplicateModal.tsx` 中的查重合并）已逐函数移植到 `utils/`，并去掉了全部浏览器依赖（DOM / FileReader / Blob / TextDecoder）。
 
 ## 一、导入微信开发者工具
 
 1. 下载并安装 [微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)（稳定版即可）。
-2. 解压 `miniprogram-vcf.zip`，得到 `miniprogram-vcf/` 文件夹。
+2. 获取本目录：
+   - 已克隆本仓库：直接使用仓库中的 `miniprogram-vcf/` 文件夹（含 `app.json` 的那一层，不要选仓库根目录）；
+   - 若拿到的是单独打包的 `miniprogram-vcf.zip`：解压后同样选择里面带 `app.json` 的那一层。
 3. 打开开发者工具 → **小程序** → 左上 **“+” / 导入项目**。
-4. **目录**：选择解压后的 `miniprogram-vcf` 文件夹（里面直接有 `app.json` 的那一层）。
+4. **目录**：选择上一步的 `miniprogram-vcf` 文件夹。
 5. **AppID**：
    - 只想本地体验：选择 **“测试号”**（或保持 `touristappid` 游客模式）；
    - 要真机预览/上传发布：填写你自己在 [mp.weixin.qq.com](https://mp.weixin.qq.com) 注册的小程序 AppID（也可以之后在 `project.config.json` 里改 `appid`）。
@@ -93,15 +98,19 @@ node --test tests/*.test.js
 - 本地缓存：微信限制单个 key 1MB、总量 10MB。联系人以精简格式（字段名缩写、空字段不存）按约 700KB 分片保存，元数据记在 `vcf_contacts_v2_meta`。实测典型联系人（姓名+1~2 个号码+部分邮箱/公司）约 130 字节/人：3000 条 0.37MB、2 万条 2.5MB、5 万条 6.3MB，按此推算上限约 7.8 万条；字段很全的联系人（多号码、地址、备注）约 1.9 万条。超过 10MB 时会提示“联系人过多”，不影响当次使用，但下次打开看到的是上一次成功保存的数据（不会被写成半份）；照片过多时会自动去掉照片再保存并提示。旧版本的单 key 缓存首次打开会自动迁移并删除。
 - CSV 导出与 Excel：长数字号码（≥11 位）、以 0 或 `+` 开头的号码/邮编写成 `="13800138000"`，Excel 会按文本原样显示（不会变成 1.38E+10、不丢前导 0/`+`）；本小程序导入时会自动去掉这层包装。其余以 `= + - @`、Tab、回车开头的单元格会加前导 `'` 防止被当成公式执行（导入时去掉）。Excel 再“另存为 CSV”后包装会消失，仍可正常导入。
 - 导出的文件编码均为 UTF-8；不提供 GBK 编码导出（GBK 仅用于读取）。
-- 联系人照片（PHOTO）会被解析保留，但不在列表中显示，也不写入导出的 VCF/表格（与原版一致）。
-- 与原网页版相比**未移植**：联系人编辑抽屉（逐字段编辑/新建）、离线 HTML 打包下载、分组标签筛选面板、AI(Gemini) 相关依赖。这些不属于核心转换功能，可后续按需加。
+- 联系人照片（PHOTO）：解析阶段仍能读出，但**导入时会被丢弃**（避免撑爆小程序本地缓存：单 key 1MB、总量 10MB）。列表中不显示，也不写入导出的 VCF/表格。网页版则会保留头像用于显示，同样不导出。
+- 与网页版相比**未移植**：联系人编辑抽屉（逐字段编辑/新建）、离线 HTML 打包下载、分组标签筛选面板。这些不属于核心转换功能，可后续按需加。网页版 `package.json` 中的 AI(Gemini) 相关依赖在源码中并未使用，小程序也未引入。
 - 正式发布到微信时，“联系人/通讯录”类小程序可能需要在后台补充用户隐私保护指引（涉及 `addPhoneContact`、剪贴板、选择文件等接口）。
 
-## 六、相对原版的修复与增强
+## 六、与网页版的差异说明
 
-- Quoted-Printable 的跨行软换行（行尾 `=`）现在能正确拼接；
-- 支持 iOS 导出的 `item1.TEL`、`item2.EMAIL` 分组前缀（原版会忽略这些号码/邮箱）；
+以下能力在小程序移植时已实现；**网页版 1.0.1**（当前 `ready-for-everything` 中的网页代码）也已具备对应实现，不宜再写成“原版仍有这些缺陷”：
+
+- Quoted-Printable 的跨行软换行（行尾 `=`）能正确拼接；
+- 支持 iOS 导出的 `item1.TEL`、`item2.EMAIL` 分组前缀；
 - `TYPE=CELL;TYPE=VOICE` 这类重复参数会合并而不是覆盖；
-- 超过 2 个电话号码时，表格“备用电话”列保留第 3 个及以后的号码（原版会丢失）；
+- 超过 2 个电话号码时，表格“备用电话”列保留第 3 个及以后的号码；
 - 查重合并按连通分量合并，避免同一联系人同时“号码重复”和“姓名重复”时被合并出两份；
 - 读取文件时自动识别 GBK/UTF-16 编码。
+
+仍与网页版不同的主要之处见上一节（未移植的编辑抽屉 / 离线 HTML / 分组筛选，以及 PHOTO 在导入时丢弃）。
