@@ -96,7 +96,7 @@ Page({
   },
 
   onShareAppMessage: function () {
-    return { title: 'VCF 通讯录 ↔ Excel/CSV 表格互转', path: '/pages/index/index' };
+    return { title: '不求人VCF工具', path: '/pages/index/index' };
   },
 
   /* ---------------- 数据与视图 ---------------- */
