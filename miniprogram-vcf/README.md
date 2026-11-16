@@ -4,6 +4,8 @@
 
 由 [kylecan-kch/ai-made](https://github.com/kylecan-kch/ai-made) 网页版（「阚哥不求人转换器」，网页版版本 1.0.1）移植而来的**原生微信小程序**（纯 JS，无需 npm 构建）。产品名为「不求人VCF工具」。小程序与网页版的版本号独立维护，当前小程序版本见 [`package.json`](./package.json)，更新记录见 [CHANGELOG.md](./CHANGELOG.md)。
 
+普通用户的操作步骤见 [docs/使用说明.md](../docs/使用说明.md) 的「[小程序使用指南](../docs/使用说明.md#小程序使用指南)」。本页主要给开发和导入微信开发者工具用。
+
 核心转换逻辑（`src/utils/vcard.ts`、`src/utils/tableFormat.ts`、`src/utils/dedupe.ts` / `DeduplicateModal.tsx` 中的查重合并）已逐函数移植到 `utils/`，并去掉了全部浏览器依赖（DOM / FileReader / Blob / TextDecoder）。
 
 ## 一、导入微信开发者工具
@@ -82,11 +84,9 @@ node --test tests/*.test.js
 
 ## 四、在手机上把 VCF 导入通讯录
 
-小程序无法直接批量写入系统通讯录（微信只开放了单个联系人的 `wx.addPhoneContact`）。批量导入的做法：
+面向普通用户的分步说明（安卓、iPhone 导出和导回，以及小程序里「发送给好友 / 文件传输助手」「打开预览」「复制内容」「存入手机通讯录」）写在 [docs/使用说明.md](../docs/使用说明.md) 的「[4. 从手机通讯录导出并导回去](../docs/使用说明.md#4-从手机通讯录导出并导回去)」。
 
-1. 导出格式选 **VCF**，点“生成文件” → “发送给好友 / 文件传输助手”；
-2. 在手机微信里打开该文件 → 右上角 **“用其他应用打开”** → 选择“通讯录 / 联系人”即可批量导入；
-3. 安卓老机型若中文乱码，导出时选 **vCard 2.1 + Quoted-Printable**。
+开发说明：小程序不能批量写入系统通讯录。批量导入由用户把导出的 `.vcf` 用系统「用其他应用打开」交给通讯录；单个联系人使用 `wx.addPhoneContact`（页面按钮「存入手机通讯录」）。老设备中文乱码时，导出选项是 **vCard 2.1** 加 **Quoted-Printable（仅 2.1）**。
 
 ## 五、限制与说明
 
