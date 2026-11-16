@@ -3,7 +3,7 @@
     "pages/index/index"
   ],
   "window": {
-    "navigationBarTitleText": "VCF 表格互转",
+    "navigationBarTitleText": "不求人VCF工具",
     "navigationBarBackgroundColor": "#2563eb",
     "navigationBarTextStyle": "white",
     "backgroundColor": "#f1f5f9",
